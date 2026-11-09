@@ -1,0 +1,50 @@
+# ---------- Environment files (never commit) ----------
+.env
+.env.*
+*.env
+!.env.example
+
+# ---------- Node / Next.js ----------
+node_modules/
+.next/
+out/
+build/
+.turbo/
+.vercel/
+*.tsbuildinfo
+next-env.d.ts
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.pnpm-store/
+
+# ---------- Python ----------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# ---------- Data & caches ----------
+data/
+*.csv
+*.parquet
+*.feather
+*.pkl
+*.joblib
+.cache/
+cache/
+
+# ---------- OS / editors ----------
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
