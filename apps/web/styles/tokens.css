@@ -1,0 +1,127 @@
+/*
+ * Design tokens. Raw values live on :root (light) and are swapped for dark
+ * mode; @theme exposes them as Tailwind utilities (bg-surface, text-fg-muted,
+ * border-border, bg-pos-mid, bg-pct-5, max-w-page, text-table, ...).
+ */
+
+:root {
+  color-scheme: light;
+
+  /* Neutrals: quiet, slightly warm greys so data, not chrome, carries colour. */
+  --bg: #f6f6f4;
+  --surface: #ffffff;
+  --surface-muted: #f0f0ed;
+  --surface-hover: #e9eef8;
+  --fg: #16181d;
+  --fg-muted: #4f5561;
+  --fg-subtle: #7a808a;
+  --border: #e2e2de;
+  --border-strong: #c4c5bf;
+  --focus: #2563eb;
+
+  /* Position groups: used for small badges/markers, always paired with a text label. */
+  --pos-gk: #b26b00;
+  --pos-def: #2459c4;
+  --pos-mid: #0b7f63;
+  --pos-fwd: #c22f4a;
+
+  /*
+   * Percentile scale: 5 diverging bins, red (low) -> neutral -> blue (high).
+   * Red/blue rather than red/green so it survives red-green colour blindness.
+   * The percentile number is always printed next to the colour.
+   */
+  --pct-1: #c8414b; /*  0-19 */
+  --pct-2: #e58a4e; /* 20-39 */
+  --pct-3: #b4b1a6; /* 40-59 */
+  --pct-4: #5e9fd4; /* 60-79 */
+  --pct-5: #1f5fae; /* 80-100 */
+
+  /* Two-player comparison (radars, side-by-side bars). */
+  --compare-a: #5a4fcf;
+  --compare-b: #d97a1e;
+
+  /* Density and layout. */
+  --row-h: 2rem;
+  --cell-px: 0.5rem;
+  --gutter: 1rem;
+}
+
+@media (min-width: 48rem) {
+  :root { --gutter: 1.5rem; }
+}
+@media (min-width: 80rem) {
+  :root { --gutter: 2rem; }
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+
+    --bg: #0e0f12;
+    --surface: #16181d;
+    --surface-muted: #1e2026;
+    --surface-hover: #1f2635;
+    --fg: #ececea;
+    --fg-muted: #a8adb7;
+    --fg-subtle: #7c828d;
+    --border: #2a2d34;
+    --border-strong: #3b3f48;
+    --focus: #6b9cff;
+
+    --pos-gk: #e0a03c;
+    --pos-def: #6c9cf0;
+    --pos-mid: #3fbf96;
+    --pos-fwd: #f06b82;
+
+    --pct-1: #e0606a;
+    --pct-2: #eb9a62;
+    --pct-3: #7f7d76;
+    --pct-4: #6aaee6;
+    --pct-5: #3d86d9;
+
+    --compare-a: #8c84f0;
+    --compare-b: #f0a050;
+  }
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-muted: var(--surface-muted);
+  --color-surface-hover: var(--surface-hover);
+  --color-fg: var(--fg);
+  --color-fg-muted: var(--fg-muted);
+  --color-fg-subtle: var(--fg-subtle);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-focus: var(--focus);
+
+  --color-pos-gk: var(--pos-gk);
+  --color-pos-def: var(--pos-def);
+  --color-pos-mid: var(--pos-mid);
+  --color-pos-fwd: var(--pos-fwd);
+
+  --color-pct-1: var(--pct-1);
+  --color-pct-2: var(--pct-2);
+  --color-pct-3: var(--pct-3);
+  --color-pct-4: var(--pct-4);
+  --color-pct-5: var(--pct-5);
+
+  --color-compare-a: var(--compare-a);
+  --color-compare-b: var(--compare-b);
+
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+}
+
+@theme {
+  /* Small, dense type steps for data UI (Tailwind's defaults start at 12px). */
+  --text-2xs: 0.6875rem; /* 11px: table headers, labels */
+  --text-2xs--line-height: 1rem;
+  --text-table: 0.8125rem; /* 13px: table cells, stat rows */
+  --text-table--line-height: 1.25rem;
+
+  /* Containers: wide for dashboards/tables, narrow for written reports. */
+  --container-page: 90rem;
+  --container-reading: 42rem;
+}

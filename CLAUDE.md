@@ -10,6 +10,15 @@ EPL AI Scout is a Premier League scouting platform: `apps/web` (Next.js) and `ap
 - **Every number shown to a user must be traceable to a database row.**
 - **Ownership:** `apps/web` owns the interface, auth and shortlists. `apps/api` owns football data, models and engines.
 
+## Design system (apps/web)
+
+- Tokens live in `apps/web/styles/tokens.css` and component classes in `apps/web/styles/components.css`. Use the token utilities (`bg-surface`, `text-fg-muted`, `border-border`, `pos-*`, `pct-*`) instead of raw Tailwind palette colours.
+- No club crests, league logos or player photos anywhere.
+- Format every stat through `lib/format.ts`. Missing values render as an en dash, never `0`. Numeric columns are right-aligned with tabular figures (`.num`).
+- Colour is never the only signal: percentile colours sit next to the number, and position colours next to the GK/DEF/MID/FWD label.
+- Radars: fixed scales per position group, and always show minutes played and the comparison pool.
+- Every chart gets a short plain-language explanation beside it (`.chart-block` + `.chart-note`).
+
 ## Working in the repo
 
 - Install JS dependencies from the repo root (`npm install`). `apps/web` is an npm workspace with the lockfile at the root.

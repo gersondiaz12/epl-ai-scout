@@ -1,0 +1,451 @@
+/*
+ * Reusable primitives. Plain class names so they work on any element
+ * (<a>, <button>, <Link>) and compose with Tailwind utilities.
+ */
+
+@layer base {
+  html {
+    background: var(--bg);
+    color: var(--fg);
+  }
+
+  body {
+    font-family: var(--font-sans);
+    font-size: 0.875rem;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  h1, h2, h3 {
+    letter-spacing: -0.01em;
+    text-wrap: balance;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      transition-duration: 0.01ms !important;
+      animation-duration: 0.01ms !important;
+    }
+  }
+}
+
+@layer components {
+  /* ---------- Layout ---------- */
+
+  .container-page {
+    width: 100%;
+    max-width: var(--container-page);
+    margin-inline: auto;
+    padding-inline: var(--gutter);
+  }
+
+  .container-reading {
+    width: 100%;
+    max-width: var(--container-reading);
+    margin-inline: auto;
+    padding-inline: var(--gutter);
+  }
+
+  /* Vertical rhythm; override gap with --stack-gap. */
+  .stack {
+    display: flex;
+    flex-direction: column;
+    gap: var(--stack-gap, 1rem);
+  }
+
+  /* Wrapping row of chips, buttons, filters. */
+  .cluster {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--cluster-gap, 0.5rem);
+  }
+
+  /* Card grid that reflows without breakpoints; set --grid-min per use. */
+  .grid-auto {
+    display: grid;
+    gap: var(--grid-gap, 1rem);
+    grid-template-columns: repeat(auto-fill, minmax(min(var(--grid-min, 16rem), 100%), 1fr));
+  }
+
+  /* Filters/shortlist sidebar + main content; stacks below 64rem. */
+  .layout-sidebar {
+    display: grid;
+    gap: var(--gutter);
+  }
+  @media (min-width: 64rem) {
+    .layout-sidebar {
+      grid-template-columns: var(--sidebar-w, 17rem) minmax(0, 1fr);
+    }
+  }
+
+  .panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+  }
+
+  .panel-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--border);
+  }
+
+  /* Small uppercase label for sections, filters, stat names. */
+  .eyebrow {
+    font-size: var(--text-2xs);
+    line-height: 1rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--fg-subtle);
+  }
+
+  /* A chart with its plain-language explanation; side by side from 64rem. */
+  .chart-block {
+    display: grid;
+    gap: 1rem;
+  }
+  @media (min-width: 64rem) {
+    .chart-block {
+      grid-template-columns: minmax(0, 1fr) var(--note-w, 18rem);
+      align-items: start;
+    }
+  }
+
+  .chart-note {
+    color: var(--fg-muted);
+    font-size: 0.875rem;
+    line-height: 1.55;
+    max-width: 65ch;
+  }
+  @media (min-width: 64rem) {
+    .chart-note {
+      padding-left: 1rem;
+      border-left: 1px solid var(--border);
+    }
+  }
+
+  /* ---------- Numbers ---------- */
+
+  /* Tabular, lining figures so digits align in columns and don't jitter. */
+  .num {
+    font-variant-numeric: tabular-nums lining-nums;
+    text-align: right;
+    white-space: nowrap;
+  }
+
+  /* ---------- Data tables ---------- */
+
+  /* Scroll wrapper: horizontal scroll on narrow screens; set --table-max-h for a sticky header. */
+  .table-scroll {
+    overflow: auto;
+    max-height: var(--table-max-h, none);
+    overscroll-behavior-x: contain;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+  }
+
+  .data-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: var(--text-table);
+    line-height: 1.25rem;
+    font-variant-numeric: tabular-nums lining-nums;
+  }
+
+  .data-table th,
+  .data-table td {
+    height: var(--row-h);
+    padding: 0 var(--cell-px);
+    text-align: left;
+    white-space: nowrap;
+    border-bottom: 1px solid var(--border);
+    background: var(--row-bg, var(--surface));
+  }
+
+  .data-table th.num,
+  .data-table td.num {
+    text-align: right;
+  }
+
+  .data-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    --row-bg: var(--surface-muted);
+    font-size: var(--text-2xs);
+    font-weight: 600;
+    color: var(--fg-muted);
+    vertical-align: bottom;
+  }
+
+  /* Multi-level headers: the first row holds column groups (colspan). */
+  .data-table thead tr:first-child:not(:last-child) th {
+    text-align: center;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--fg-subtle);
+  }
+  .data-table thead tr:nth-child(2) th {
+    top: var(--row-h);
+  }
+
+  /* Vertical rule at the start of each column group. */
+  .data-table .group-start {
+    border-left: 1px solid var(--border-strong);
+  }
+
+  /* Player-name column stays visible while scrolling sideways. */
+  .data-table .col-sticky {
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    border-right: 1px solid var(--border);
+  }
+  .data-table thead .col-sticky {
+    z-index: 3;
+  }
+
+  .data-table tbody tr:hover {
+    --row-bg: var(--surface-hover);
+  }
+
+  .data-table tbody tr:last-child td {
+    border-bottom: 0;
+  }
+
+  .data-table th[aria-sort] {
+    cursor: pointer;
+    user-select: none;
+  }
+  .data-table th[aria-sort="ascending"]::after {
+    content: " \25B4";
+  }
+  .data-table th[aria-sort="descending"]::after {
+    content: " \25BE";
+  }
+
+  .data-table--comfortable {
+    --row-h: 2.5rem;
+    --cell-px: 0.75rem;
+  }
+
+  /* ---------- Stat chip ---------- */
+
+  .stat-chip {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.375rem;
+    padding: 0.125rem 0.5rem;
+    font-size: 0.75rem;
+    line-height: 1.25rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 0.375rem;
+    white-space: nowrap;
+  }
+  .stat-chip__label {
+    color: var(--fg-muted);
+  }
+  .stat-chip__value {
+    font-weight: 600;
+    font-variant-numeric: tabular-nums lining-nums;
+  }
+
+  /* ---------- Position badge: <span class="pos-badge" data-pos="MID">MID</span> ---------- */
+
+  .pos-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 0 0.375rem;
+    font-size: var(--text-2xs);
+    line-height: 1.125rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    color: var(--pos-color, var(--fg-muted));
+    background: color-mix(in oklab, var(--pos-color, var(--fg-muted)) 12%, transparent);
+    border: 1px solid color-mix(in oklab, var(--pos-color, var(--fg-muted)) 35%, transparent);
+    border-radius: 0.25rem;
+  }
+  [data-pos="GK"] { --pos-color: var(--pos-gk); }
+  [data-pos="DEF"] { --pos-color: var(--pos-def); }
+  [data-pos="MID"] { --pos-color: var(--pos-mid); }
+  [data-pos="FWD"] { --pos-color: var(--pos-fwd); }
+
+  /* ---------- Percentile bars ---------- */
+
+  /* Wrap bars in .pct-list: label sits above the bar in narrow containers, beside it in wide ones. */
+  .pct-list {
+    container-type: inline-size;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .pct-bar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 2.25rem;
+    grid-template-areas:
+      "label value"
+      "track track";
+    align-items: center;
+    column-gap: 0.75rem;
+    row-gap: 0.25rem;
+    font-size: var(--text-table);
+    line-height: 1.25rem;
+  }
+  @container (min-width: 28rem) {
+    .pct-bar {
+      grid-template-columns: minmax(0, var(--pct-label-w, 11rem)) minmax(0, 1fr) 2.25rem;
+      grid-template-areas: "label track value";
+    }
+  }
+
+  .pct-bar__label {
+    grid-area: label;
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.5rem;
+    min-width: 0;
+  }
+  .pct-bar__name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  /* Raw stat value (e.g. per 90) shown beside the label. */
+  .pct-bar__raw {
+    color: var(--fg-subtle);
+    font-variant-numeric: tabular-nums lining-nums;
+    white-space: nowrap;
+  }
+
+  .pct-bar__track {
+    grid-area: track;
+    position: relative;
+    height: 0.5rem;
+    background: var(--surface-muted);
+    border-radius: 999px;
+    overflow: hidden;
+  }
+  /* Median marker at the 50th percentile. */
+  .pct-bar__track::after {
+    content: "";
+    position: absolute;
+    inset-block: 0;
+    left: 50%;
+    width: 1px;
+    background: var(--border-strong);
+  }
+  .pct-bar__fill {
+    height: 100%;
+    width: calc(var(--pct, 0) * 1%);
+    background: var(--pct-color, var(--pct-3));
+    border-radius: inherit;
+  }
+
+  .pct-bar__value {
+    grid-area: value;
+    text-align: right;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums lining-nums;
+  }
+
+  [data-bin="1"] { --pct-color: var(--pct-1); }
+  [data-bin="2"] { --pct-color: var(--pct-2); }
+  [data-bin="3"] { --pct-color: var(--pct-3); }
+  [data-bin="4"] { --pct-color: var(--pct-4); }
+  [data-bin="5"] { --pct-color: var(--pct-5); }
+
+  /* ---------- Buttons ---------- */
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    height: 2rem;
+    padding-inline: 0.75rem;
+    font-size: var(--text-table);
+    font-weight: 500;
+    white-space: nowrap;
+    border: 1px solid transparent;
+    border-radius: 0.375rem;
+    cursor: pointer;
+    transition: background-color 120ms, border-color 120ms, color 120ms;
+  }
+  .btn:disabled,
+  .btn[aria-disabled="true"] {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  /* Larger touch targets on touch screens. */
+  @media (pointer: coarse) {
+    .btn { min-height: 2.75rem; }
+  }
+
+  .btn-primary {
+    background: var(--fg);
+    color: var(--bg);
+  }
+  .btn-primary:hover:not(:disabled) {
+    background: color-mix(in oklab, var(--fg) 85%, var(--bg));
+  }
+
+  .btn-secondary {
+    background: var(--surface);
+    color: var(--fg);
+    border-color: var(--border-strong);
+  }
+  .btn-secondary:hover:not(:disabled) {
+    background: var(--surface-muted);
+  }
+
+  .btn-ghost {
+    background: transparent;
+    color: var(--fg-muted);
+  }
+  .btn-ghost:hover:not(:disabled) {
+    background: var(--surface-muted);
+    color: var(--fg);
+  }
+
+  .btn-sm { height: 1.75rem; padding-inline: 0.5rem; font-size: 0.75rem; }
+  .btn-lg { height: 2.5rem; padding-inline: 1rem; font-size: 0.875rem; }
+
+  /* ---------- Links ---------- */
+
+  .link {
+    color: var(--fg);
+    text-decoration: underline;
+    text-decoration-color: var(--border-strong);
+    text-decoration-thickness: 1px;
+    text-underline-offset: 3px;
+    transition: text-decoration-color 120ms;
+  }
+  .link:hover {
+    text-decoration-color: currentColor;
+  }
+
+  /* Quiet link for dense tables (e.g. player names): underline on hover only. */
+  .link-quiet {
+    color: inherit;
+    text-decoration: none;
+  }
+  .link-quiet:hover {
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+}
