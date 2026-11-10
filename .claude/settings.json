@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run dev:web)",
+      "Bash(npm run lint:web)",
+      "Bash(npm run typecheck:web)",
+      "Bash(npm run test:web *)",
+      "Bash(uv run pytest *)",
+      "Bash(uv run ruff *)",
+      "Bash(uv run uvicorn app.main:app *)",
+      "Bash(git status *)",
+      "Bash(git diff *)",
+      "Bash(git log *)"
+    ],
+    "deny": [
+      "Read(**/.env)",
+      "Read(**/.env.*)",
+      "Bash(git push *)"
+    ]
+  }
+}
