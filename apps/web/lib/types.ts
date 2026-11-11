@@ -18,6 +18,17 @@ export type Player = {
   name: string;
   position: Position;
   age: number;
+  /** League appearances this season (starts + sub appearances). */
+  appearances: number;
   /** League minutes this season. */
   minutes: number;
+  goals: number;
+  assists: number;
+};
+
+/** Squad-level figures for the club picker, derived from the club's players. */
+export type ClubSummary = Club & {
+  squadSize: number;
+  averageAge: number | null;
+  topScorer: { name: string; goals: number } | null;
 };

@@ -1,13 +1,18 @@
 /**
  * TEMPORARY SAMPLE DATA. Delete this file once apps/api serves real data,
- * then point the imports of getClubs/getClub/getSquad at the API client.
+ * then point the imports of getClubs/getClub/getSquad/getClubSummaries at the
+ * API client.
  *
- * Clubs are the real 2026–27 Premier League line-up. Every player, age and
- * minute figure below is FICTIONAL and must never be presented as real.
+ * Clubs are the real 2026–27 Premier League line-up. Every player and every
+ * figure below (age, appearances, minutes, goals, assists) is FICTIONAL and
+ * must never be presented as real.
  */
-import type { Club, Player, Position } from "./types";
+import type { Club, ClubSummary, Player, Position } from "./types";
 
 export const IS_SAMPLE_DATA = true;
+
+/** Sample season state: matchweeks played so far (caps appearances and minutes). */
+export const SAMPLE_MATCHWEEKS = 11;
 
 const CLUBS: Club[] = [
   { slug: "arsenal", name: "Arsenal", code: "ARS", ground: "Emirates Stadium", city: "London", promoted: false },
@@ -32,30 +37,150 @@ const CLUBS: Club[] = [
   { slug: "tottenham-hotspur", name: "Tottenham Hotspur", code: "TOT", ground: "Tottenham Hotspur Stadium", city: "London", promoted: false },
 ];
 
-/** Fictional players: [name, position, age, league minutes]. */
-type Row = [string, Position, number, number];
+/** Fictional players: [name, position, age, appearances, minutes, goals, assists]. */
+type Row = [string, Position, number, number, number, number, number];
 
 const SQUADS: Record<string, Row[]> = {
-  arsenal: [["Tomas Varga", "GK", 27, 990], ["Elliot Marsh", "DEF", 24, 945], ["Kofi Mensah", "MID", 22, 812], ["Rui Saldanha", "FWD", 26, 703], ["Owen Pryce", "DEF", 30, 410]],
-  "aston-villa": [["Marek Dvorak", "GK", 31, 990], ["Jamal Okafor", "DEF", 25, 900], ["Luca Benedetti", "MID", 28, 866], ["Sam Whitlock", "FWD", 21, 534], ["Harvey Lane", "MID", 19, 122]],
-  bournemouth: [["Pieter Smit", "GK", 29, 990], ["Callum Reid", "DEF", 23, 871], ["Yassine Amrani", "MID", 24, 790], ["Diego Ferraz", "FWD", 27, 655], ["Noah Ellison", "DEF", 20, 318]],
-  brentford: [["Anders Holm", "GK", 26, 900], ["Ben Ashworth", "DEF", 28, 990], ["Mateo Quiroga", "MID", 23, 721], ["Ivan Petrov", "FWD", 25, 802], ["Leo Carver", "MID", 18, 64]],
-  brighton: [["Jakub Nowak", "GK", 24, 810], ["Theo Lambert", "DEF", 21, 884], ["Kaito Mori", "MID", 25, 930], ["Felix Brandt", "FWD", 22, 615], ["Ruben Ortega", "DEF", 27, 540]],
-  chelsea: [["Simon Lacroix", "GK", 28, 990], ["Marcus Hale", "DEF", 22, 920], ["Andre Costa", "MID", 20, 845], ["Tobi Adeyemi", "FWD", 23, 760], ["Kieran Walsh", "MID", 26, 402]],
-  "coventry-city": [["Dan Fletcher", "GK", 30, 990], ["Joel Hartley", "DEF", 26, 955], ["Ollie Brennan", "MID", 24, 870], ["Ade Bankole", "FWD", 22, 688], ["Matt Sinclair", "DEF", 32, 271]],
-  "crystal-palace": [["Lewis Graham", "GK", 33, 990], ["Isaac Boateng", "DEF", 24, 910], ["Pablo Medina", "MID", 27, 835], ["Jordan Clarke", "FWD", 21, 590], ["Ethan Moss", "MID", 19, 205]],
-  everton: [["Ryan Doherty", "GK", 29, 990], ["Connor Byrne", "DEF", 27, 960], ["Malik Diallo", "MID", 25, 822], ["Scott Henley", "FWD", 30, 640], ["Alfie Turner", "DEF", 20, 380]],
-  fulham: [["Bruno Tavares", "GK", 32, 990], ["Will Hastings", "DEF", 29, 890], ["Emre Kaya", "MID", 26, 801], ["Rafael Lima", "FWD", 24, 712], ["George Fenwick", "MID", 22, 455]],
-  "hull-city": [["Karl Lindqvist", "GK", 27, 990], ["Tom Ridley", "DEF", 25, 940], ["Nathan Cole", "MID", 23, 856], ["Sami Haddad", "FWD", 26, 730], ["Jack Hollis", "DEF", 21, 260]],
-  "ipswich-town": [["Alex Morton", "GK", 28, 990], ["Luke Pearson", "DEF", 24, 905], ["Hugo Martel", "MID", 22, 838], ["Chris Ogun", "FWD", 25, 674], ["Ben Kerr", "MID", 30, 330]],
-  "leeds-united": [["Mats Eriksen", "GK", 26, 990], ["Joe Barker", "DEF", 23, 928], ["Daniel Rocha", "MID", 27, 861], ["Kyle Nolan", "FWD", 24, 702], ["Finn Ashby", "DEF", 19, 148]],
-  liverpool: [["Paulo Ventura", "GK", 30, 990], ["Aaron Whitby", "DEF", 26, 950], ["Lucas Fontaine", "MID", 24, 880], ["Samuel Eze", "FWD", 23, 795], ["Max Reilly", "MID", 20, 360]],
-  "manchester-city": [["Henrik Dahl", "GK", 31, 900], ["Adrian Silva", "DEF", 27, 990], ["Joon Park", "MID", 25, 910], ["Matias Herrera", "FWD", 24, 820], ["Reece Cooper", "DEF", 21, 450]],
-  "manchester-united": [["Oscar Lund", "GK", 25, 990], ["Darnell Price", "DEF", 22, 930], ["Enzo Moretti", "MID", 26, 850], ["Kwame Asante", "FWD", 21, 690], ["Liam Doyle", "MID", 28, 505]],
-  "newcastle-united": [["Craig Robson", "GK", 32, 990], ["Victor Lindgren", "DEF", 26, 945], ["Jonah Wright", "MID", 23, 880], ["Abdou Sarr", "FWD", 25, 760], ["Harry Bell", "DEF", 20, 290]],
-  "nottingham-forest": [["Nikola Jovic", "GK", 28, 990], ["Sean Ward", "DEF", 27, 915], ["Thiago Reis", "MID", 24, 845], ["Marcus Lowe", "FWD", 26, 710], ["Josh Keane", "MID", 21, 340]],
-  sunderland: [["Lars Vik", "GK", 25, 990], ["Michael Dunn", "DEF", 24, 935], ["Ibrahim Toure", "MID", 22, 860], ["Jamie Forsyth", "FWD", 20, 655], ["Cole Ramsey", "DEF", 29, 420]],
-  "tottenham-hotspur": [["Gabriel Nunes", "GK", 29, 990], ["Archie Bennett", "DEF", 23, 925], ["Min-jae Seo", "MID", 26, 870], ["Ethan Brooks", "FWD", 22, 745], ["Rhys Morgan", "MID", 19, 180]],
+  arsenal: [
+    ["Tomas Varga", "GK", 27, 11, 990, 0, 0],
+    ["Elliot Marsh", "DEF", 24, 11, 945, 1, 2],
+    ["Kofi Mensah", "MID", 22, 10, 812, 3, 4],
+    ["Rui Saldanha", "FWD", 26, 10, 703, 6, 2],
+    ["Owen Pryce", "DEF", 30, 6, 410, 0, 1],
+  ],
+  "aston-villa": [
+    ["Marek Dvorak", "GK", 31, 11, 990, 0, 0],
+    ["Jamal Okafor", "DEF", 25, 10, 900, 1, 0],
+    ["Luca Benedetti", "MID", 28, 10, 866, 2, 5],
+    ["Sam Whitlock", "FWD", 21, 9, 534, 4, 1],
+    ["Harvey Lane", "MID", 19, 4, 122, 0, 0],
+  ],
+  bournemouth: [
+    ["Pieter Smit", "GK", 29, 11, 990, 0, 0],
+    ["Callum Reid", "DEF", 23, 10, 871, 0, 2],
+    ["Yassine Amrani", "MID", 24, 10, 790, 3, 2],
+    ["Diego Ferraz", "FWD", 27, 9, 655, 5, 1],
+    ["Noah Ellison", "DEF", 20, 5, 318, 0, 0],
+  ],
+  brentford: [
+    ["Anders Holm", "GK", 26, 10, 900, 0, 0],
+    ["Ben Ashworth", "DEF", 28, 11, 990, 2, 1],
+    ["Mateo Quiroga", "MID", 23, 10, 721, 1, 3],
+    ["Ivan Petrov", "FWD", 25, 10, 802, 7, 2],
+    ["Leo Carver", "MID", 18, 3, 64, 0, 0],
+  ],
+  brighton: [
+    ["Jakub Nowak", "GK", 24, 9, 810, 0, 0],
+    ["Theo Lambert", "DEF", 21, 10, 884, 0, 3],
+    ["Kaito Mori", "MID", 25, 11, 930, 4, 3],
+    ["Felix Brandt", "FWD", 22, 9, 615, 3, 2],
+    ["Ruben Ortega", "DEF", 27, 7, 540, 1, 0],
+  ],
+  chelsea: [
+    ["Simon Lacroix", "GK", 28, 11, 990, 0, 0],
+    ["Marcus Hale", "DEF", 22, 11, 920, 1, 1],
+    ["Andre Costa", "MID", 20, 10, 845, 2, 6],
+    ["Tobi Adeyemi", "FWD", 23, 10, 760, 6, 3],
+    ["Kieran Walsh", "MID", 26, 7, 402, 0, 1],
+  ],
+  "coventry-city": [
+    ["Dan Fletcher", "GK", 30, 11, 990, 0, 0],
+    ["Joel Hartley", "DEF", 26, 11, 955, 1, 1],
+    ["Ollie Brennan", "MID", 24, 10, 870, 2, 3],
+    ["Ade Bankole", "FWD", 22, 10, 688, 4, 1],
+    ["Matt Sinclair", "DEF", 32, 4, 271, 0, 0],
+  ],
+  "crystal-palace": [
+    ["Lewis Graham", "GK", 33, 11, 990, 0, 0],
+    ["Isaac Boateng", "DEF", 24, 11, 910, 0, 1],
+    ["Pablo Medina", "MID", 27, 10, 835, 2, 4],
+    ["Jordan Clarke", "FWD", 21, 9, 590, 3, 0],
+    ["Ethan Moss", "MID", 19, 5, 205, 0, 1],
+  ],
+  everton: [
+    ["Ryan Doherty", "GK", 29, 11, 990, 0, 0],
+    ["Connor Byrne", "DEF", 27, 11, 960, 1, 0],
+    ["Malik Diallo", "MID", 25, 10, 822, 1, 3],
+    ["Scott Henley", "FWD", 30, 9, 640, 4, 1],
+    ["Alfie Turner", "DEF", 20, 6, 380, 0, 0],
+  ],
+  fulham: [
+    ["Bruno Tavares", "GK", 32, 11, 990, 0, 0],
+    ["Will Hastings", "DEF", 29, 10, 890, 0, 2],
+    ["Emre Kaya", "MID", 26, 10, 801, 3, 3],
+    ["Rafael Lima", "FWD", 24, 10, 712, 5, 2],
+    ["George Fenwick", "MID", 22, 7, 455, 1, 0],
+  ],
+  "hull-city": [
+    ["Karl Lindqvist", "GK", 27, 11, 990, 0, 0],
+    ["Tom Ridley", "DEF", 25, 11, 940, 1, 0],
+    ["Nathan Cole", "MID", 23, 10, 856, 2, 2],
+    ["Sami Haddad", "FWD", 26, 10, 730, 4, 1],
+    ["Jack Hollis", "DEF", 21, 4, 260, 0, 0],
+  ],
+  "ipswich-town": [
+    ["Alex Morton", "GK", 28, 11, 990, 0, 0],
+    ["Luke Pearson", "DEF", 24, 11, 905, 0, 1],
+    ["Hugo Martel", "MID", 22, 10, 838, 1, 3],
+    ["Chris Ogun", "FWD", 25, 10, 674, 3, 2],
+    ["Ben Kerr", "MID", 30, 6, 330, 0, 0],
+  ],
+  "leeds-united": [
+    ["Mats Eriksen", "GK", 26, 11, 990, 0, 0],
+    ["Joe Barker", "DEF", 23, 11, 928, 1, 1],
+    ["Daniel Rocha", "MID", 27, 10, 861, 2, 4],
+    ["Kyle Nolan", "FWD", 24, 10, 702, 5, 0],
+    ["Finn Ashby", "DEF", 19, 3, 148, 0, 0],
+  ],
+  liverpool: [
+    ["Paulo Ventura", "GK", 30, 11, 990, 0, 0],
+    ["Aaron Whitby", "DEF", 26, 11, 950, 1, 4],
+    ["Lucas Fontaine", "MID", 24, 10, 880, 4, 5],
+    ["Samuel Eze", "FWD", 23, 10, 795, 8, 3],
+    ["Max Reilly", "MID", 20, 6, 360, 1, 0],
+  ],
+  "manchester-city": [
+    ["Henrik Dahl", "GK", 31, 10, 900, 0, 0],
+    ["Adrian Silva", "DEF", 27, 11, 990, 2, 1],
+    ["Joon Park", "MID", 25, 11, 910, 3, 6],
+    ["Matias Herrera", "FWD", 24, 10, 820, 9, 2],
+    ["Reece Cooper", "DEF", 21, 6, 450, 0, 1],
+  ],
+  "manchester-united": [
+    ["Oscar Lund", "GK", 25, 11, 990, 0, 0],
+    ["Darnell Price", "DEF", 22, 11, 930, 0, 2],
+    ["Enzo Moretti", "MID", 26, 10, 850, 3, 3],
+    ["Kwame Asante", "FWD", 21, 10, 690, 4, 2],
+    ["Liam Doyle", "MID", 28, 8, 505, 1, 1],
+  ],
+  "newcastle-united": [
+    ["Craig Robson", "GK", 32, 11, 990, 0, 0],
+    ["Victor Lindgren", "DEF", 26, 11, 945, 2, 0],
+    ["Jonah Wright", "MID", 23, 10, 880, 2, 4],
+    ["Abdou Sarr", "FWD", 25, 10, 760, 6, 1],
+    ["Harry Bell", "DEF", 20, 5, 290, 0, 0],
+  ],
+  "nottingham-forest": [
+    ["Nikola Jovic", "GK", 28, 11, 990, 0, 0],
+    ["Sean Ward", "DEF", 27, 11, 915, 1, 1],
+    ["Thiago Reis", "MID", 24, 10, 845, 2, 3],
+    ["Marcus Lowe", "FWD", 26, 10, 710, 5, 1],
+    ["Josh Keane", "MID", 21, 6, 340, 0, 1],
+  ],
+  sunderland: [
+    ["Lars Vik", "GK", 25, 11, 990, 0, 0],
+    ["Michael Dunn", "DEF", 24, 11, 935, 0, 1],
+    ["Ibrahim Toure", "MID", 22, 10, 860, 3, 2],
+    ["Jamie Forsyth", "FWD", 20, 10, 655, 4, 2],
+    ["Cole Ramsey", "DEF", 29, 6, 420, 1, 0],
+  ],
+  "tottenham-hotspur": [
+    ["Gabriel Nunes", "GK", 29, 11, 990, 0, 0],
+    ["Archie Bennett", "DEF", 23, 11, 925, 1, 2],
+    ["Min-jae Seo", "MID", 26, 10, 870, 3, 4],
+    ["Ethan Brooks", "FWD", 22, 10, 745, 5, 3],
+    ["Rhys Morgan", "MID", 19, 4, 180, 0, 0],
+  ],
 };
 
 export function getClubs(): Club[] {
@@ -67,11 +192,39 @@ export function getClub(slug: string): Club | undefined {
 }
 
 export function getSquad(slug: string): Player[] {
-  return (SQUADS[slug] ?? []).map(([name, position, age, minutes], i) => ({
-    id: `${slug}-${i}`,
-    name,
-    position,
-    age,
-    minutes,
-  }));
+  return (SQUADS[slug] ?? []).map(
+    ([name, position, age, appearances, minutes, goals, assists], i) => ({
+      id: `${slug}-${i}`,
+      name,
+      position,
+      age,
+      appearances,
+      minutes,
+      goals,
+      assists,
+    }),
+  );
+}
+
+/** Per-club figures for the picker. Every value is computed from getSquad rows. */
+export function getClubSummaries(): ClubSummary[] {
+  return CLUBS.map((club) => {
+    const squad = getSquad(club.slug);
+    const averageAge = squad.length
+      ? squad.reduce((sum, p) => sum + p.age, 0) / squad.length
+      : null;
+    const top = squad.reduce<Player | null>(
+      (best, p) =>
+        !best || p.goals > best.goals || (p.goals === best.goals && p.assists > best.assists)
+          ? p
+          : best,
+      null,
+    );
+    return {
+      ...club,
+      squadSize: squad.length,
+      averageAge,
+      topScorer: top && top.goals > 0 ? { name: top.name, goals: top.goals } : null,
+    };
+  });
 }

@@ -221,7 +221,7 @@
     --row-bg: var(--surface-hover);
   }
 
-  .data-table tbody tr:last-child td {
+  .data-table tbody tr:last-child > * {
     border-bottom: 0;
   }
 
@@ -234,6 +234,53 @@
   }
   .data-table th[aria-sort="descending"]::after {
     content: " \25BE";
+  }
+
+  /* Sortable column: <th aria-sort><button class="sort-btn">…</button></th>. */
+  .data-table .sort-btn {
+    font: inherit;
+    color: inherit;
+    text-align: inherit;
+    text-transform: inherit;
+    letter-spacing: inherit;
+    background: none;
+    border: 0;
+    padding: 0;
+    cursor: pointer;
+  }
+  .data-table .sort-btn:hover {
+    color: var(--fg);
+  }
+  .data-table th[aria-sort="ascending"],
+  .data-table th[aria-sort="descending"] {
+    color: var(--fg);
+  }
+
+  /* Whole row is clickable: put .row-link on <tr> and .row-link__target on its main <a>. */
+  .data-table tr.row-link {
+    position: relative;
+  }
+  .data-table .row-link__target::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+  }
+  .data-table .row-link__target:focus-visible {
+    outline: none;
+  }
+  .data-table tr.row-link:has(.row-link__target:focus-visible) {
+    --row-bg: var(--surface-hover);
+    outline: 2px solid var(--focus);
+    outline-offset: -2px;
+  }
+
+  /* Totals row. */
+  .data-table tfoot th,
+  .data-table tfoot td {
+    font-weight: 600;
+    border-top: 1px solid var(--border-strong);
+    border-bottom: 0;
+    --row-bg: var(--surface-muted);
   }
 
   .data-table--comfortable {
@@ -482,23 +529,27 @@
     border-radius: 0.375rem;
   }
 
-  .club-card {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    min-height: 4rem;
-    padding: 0.75rem;
-    background: var(--surface);
+  .club-code--sm {
+    width: 2.5rem;
+    height: 1.5rem;
+    font-size: var(--text-2xs);
+    border-radius: 0.25rem;
+  }
+
+  /* ---------- Keyboard hint ---------- */
+
+  .kbd {
+    display: inline-grid;
+    place-items: center;
+    min-width: 1.25rem;
+    height: 1.25rem;
+    padding-inline: 0.25rem;
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    color: var(--fg-subtle);
+    background: var(--surface-muted);
     border: 1px solid var(--border);
-    border-radius: 0.5rem;
-    transition: border-color 120ms, background-color 120ms;
-  }
-  .club-card:hover {
-    border-color: var(--border-strong);
-    background: var(--surface-hover);
-  }
-  .club-card[aria-current="page"] {
-    border-color: var(--fg);
+    border-radius: 0.25rem;
   }
 
   /* ---------- Menu: dropdown list built on <details> ---------- */
