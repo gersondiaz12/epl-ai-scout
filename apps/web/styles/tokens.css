@@ -41,6 +41,7 @@
   --compare-b: #d97a1e;
 
   /* Density and layout. */
+  --header-h: 3.5rem; /* sticky site header; sticky table headers sit below it */
   --row-h: 2rem;
   --cell-px: 0.5rem;
   --gutter: 1rem;

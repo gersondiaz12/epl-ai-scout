@@ -18,6 +18,9 @@ EPL AI Scout is a Premier League scouting platform: `apps/web` (Next.js) and `ap
 - Colour is never the only signal: percentile colours sit next to the number, and position colours next to the GK/DEF/MID/FWD label.
 - Radars: fixed scales per position group, and always show minutes played and the comparison pool.
 - Every chart gets a short plain-language explanation beside it (`.chart-block` + `.chart-note`).
+- Sortable tables use `components/ui/sort-header.tsx` with `lib/sort.ts`; missing values always sort last. On phones, also offer the sort as a menu, since headers scroll out of view.
+- Long tables add `.table-scroll--sticky-header` so column labels stay on screen while scrolling: from 1024px they stick under the site header, and below that the table scrolls inside a viewport-height box.
+- Per-90 rates come from `lib/per90.ts`, which returns null (shown as `–`) under 270 minutes.
 
 ## Working in the repo
 

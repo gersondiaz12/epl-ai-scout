@@ -155,6 +155,27 @@
     border-radius: 0.5rem;
   }
 
+  /*
+   * Keep column labels on screen while scrolling a long table.
+   * - From 64rem the table fits without sideways scroll, so the wrapper stops
+   *   being a scroll container and the header sticks to the page, just under
+   *   the site header.
+   * - Below 64rem the table must scroll sideways, so it is capped at the
+   *   viewport height and scrolls inside itself; its header sticks there.
+   */
+  .table-scroll--sticky-header {
+    --table-max-h: calc(100dvh - var(--header-h) - 1rem);
+  }
+  @media (min-width: 64rem) {
+    .table-scroll--sticky-header {
+      --table-max-h: none;
+      overflow: visible;
+    }
+    .table-scroll--sticky-header .data-table {
+      --sticky-top: var(--header-h);
+    }
+  }
+
   .data-table {
     width: 100%;
     border-collapse: separate;
@@ -181,7 +202,7 @@
 
   .data-table thead th {
     position: sticky;
-    top: 0;
+    top: var(--sticky-top, 0px);
     z-index: 2;
     --row-bg: var(--surface-muted);
     font-size: var(--text-2xs);
@@ -198,7 +219,7 @@
     color: var(--fg-subtle);
   }
   .data-table thead tr:nth-child(2) th {
-    top: var(--row-h);
+    top: calc(var(--sticky-top, 0px) + var(--row-h));
   }
 
   /* Vertical rule at the start of each column group. */
@@ -221,8 +242,22 @@
     --row-bg: var(--surface-hover);
   }
 
-  .data-table tbody tr:last-child > * {
+  .data-table tbody:last-of-type tr:last-child > * {
     border-bottom: 0;
+  }
+
+  /* Section header inside a table, e.g. one per position in a squad list.
+     Wrap its label in a `sticky left-*` span so it stays put when scrolling sideways. */
+  .data-table tr.group-row > * {
+    --row-bg: var(--surface-muted);
+    font-size: var(--text-2xs);
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--fg-muted);
+  }
+  .data-table tbody + tbody tr.group-row > * {
+    border-top: 1px solid var(--border-strong);
   }
 
   .data-table th[aria-sort] {
