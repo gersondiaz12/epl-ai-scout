@@ -3,14 +3,16 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
+import { SortHeader } from "@/components/ui/sort-header";
 import { MISSING, formatNumber } from "@/lib/format";
+import { compareValues, nextSort, type SortDir, type SortState } from "@/lib/sort";
 import type { ClubSummary } from "@/lib/types";
 
 type SortKey = "name" | "averageAge" | "topGoals";
-type Sort = { key: SortKey; dir: "ascending" | "descending" };
+type Sort = SortState<SortKey>;
 
 /** Direction a column sorts in when first clicked. */
-const FIRST_DIR: Record<SortKey, Sort["dir"]> = {
+const FIRST_DIR: Record<SortKey, SortDir> = {
   name: "ascending",
   averageAge: "ascending",
   topGoals: "descending",
@@ -26,28 +28,19 @@ function normalize(text: string): string {
 
 function matches(club: ClubSummary, query: string): boolean {
   if (!query) return true;
-  return [club.name, club.code, club.city, club.ground].some((field) =>
-    normalize(field).includes(query),
+  return [club.name, club.short_name, club.city, club.ground].some(
+    (field) => field !== null && normalize(field).includes(query),
   );
 }
 
 function sortValue(club: ClubSummary, key: SortKey): number | string | null {
   if (key === "name") return club.name;
-  if (key === "averageAge") return club.averageAge;
-  return club.topScorer?.goals ?? null;
+  if (key === "averageAge") return club.average_age;
+  return club.top_scorer?.goals ?? null;
 }
 
 function compare(a: ClubSummary, b: ClubSummary, { key, dir }: Sort): number {
-  const va = sortValue(a, key);
-  const vb = sortValue(b, key);
-  // Missing values always sink to the bottom, whatever the direction.
-  if (va === null || vb === null) {
-    if (va !== vb) return va === null ? 1 : -1;
-  } else if (va !== vb) {
-    const order = typeof va === "string" ? va.localeCompare(vb as string) : va - (vb as number);
-    return dir === "ascending" ? order : -order;
-  }
-  return a.name.localeCompare(b.name);
+  return compareValues(sortValue(a, key), sortValue(b, key), dir) || a.name.localeCompare(b.name);
 }
 
 function surname(name: string): string {
@@ -80,15 +73,7 @@ export function ClubPicker({ clubs }: { clubs: ClubSummary[] }) {
   }, []);
 
   function sortBy(key: SortKey) {
-    setSort((current) =>
-      current.key === key
-        ? { key, dir: current.dir === "ascending" ? "descending" : "ascending" }
-        : { key, dir: FIRST_DIR[key] },
-    );
-  }
-
-  function ariaSort(key: SortKey) {
-    return sort.key === key ? sort.dir : undefined;
+    setSort((current) => nextSort(current, key, FIRST_DIR[key]));
   }
 
   return (
@@ -150,32 +135,29 @@ export function ClubPicker({ clubs }: { clubs: ClubSummary[] }) {
           </caption>
           <thead>
             <tr>
-              <th scope="col" aria-sort={ariaSort("name")}>
-                <button type="button" className="sort-btn" onClick={() => sortBy("name")}>
-                  Club
-                </button>
-              </th>
+              <SortHeader sortKey="name" sort={sort} onSort={sortBy} label="Club" />
               <th scope="col" className="hidden md:table-cell">
                 Ground
               </th>
-              <th scope="col" className="num max-[22.5rem]:hidden" aria-sort={ariaSort("averageAge")}>
-                <button type="button" className="sort-btn" onClick={() => sortBy("averageAge")}>
-                  Avg age
-                </button>
-              </th>
+              <SortHeader
+                sortKey="averageAge"
+                sort={sort}
+                onSort={sortBy}
+                label="Avg age"
+                title="Average age"
+                className="num max-[22.5rem]:hidden"
+              />
               <th scope="col" className="group-start">
                 Top scorer
               </th>
-              <th scope="col" className="num" aria-sort={ariaSort("topGoals")}>
-                <button
-                  type="button"
-                  className="sort-btn"
-                  onClick={() => sortBy("topGoals")}
-                  title="League goals by the club's top scorer"
-                >
-                  Gls
-                </button>
-              </th>
+              <SortHeader
+                sortKey="topGoals"
+                sort={sort}
+                onSort={sortBy}
+                label="Gls"
+                title="Top scorer's goals"
+                className="num"
+              />
             </tr>
           </thead>
           <tbody>
@@ -184,7 +166,7 @@ export function ClubPicker({ clubs }: { clubs: ClubSummary[] }) {
                 <th scope="row" className="py-1.5 font-normal whitespace-normal sm:whitespace-nowrap">
                   <div className="flex items-center gap-3">
                     <span className="club-code club-code--sm hidden sm:inline-grid" aria-hidden="true">
-                      {club.code}
+                      {club.short_name}
                     </span>
                     <div className="flex min-w-0 flex-col">
                       <Link
@@ -202,22 +184,22 @@ export function ClubPicker({ clubs }: { clubs: ClubSummary[] }) {
                     </div>
                   </div>
                 </th>
-                <td className="hidden text-fg-muted md:table-cell">{club.ground}</td>
+                <td className="hidden text-fg-muted md:table-cell">{club.ground ?? MISSING}</td>
                 <td className="num max-[22.5rem]:hidden">
-                  {club.averageAge === null ? MISSING : formatNumber(club.averageAge, 1)}
+                  {club.average_age === null ? MISSING : formatNumber(club.average_age, 1)}
                 </td>
                 <td className="group-start">
-                  {club.topScorer ? (
+                  {club.top_scorer ? (
                     <>
-                      <span className="sm:hidden">{surname(club.topScorer.name)}</span>
-                      <span className="hidden sm:inline">{club.topScorer.name}</span>
+                      <span className="sm:hidden">{surname(club.top_scorer.name)}</span>
+                      <span className="hidden sm:inline">{club.top_scorer.name}</span>
                     </>
                   ) : (
                     <span className="text-fg-subtle">{MISSING}</span>
                   )}
                 </td>
                 <td className="num font-semibold">
-                  {club.topScorer ? formatNumber(club.topScorer.goals) : MISSING}
+                  {club.top_scorer ? formatNumber(club.top_scorer.goals) : MISSING}
                 </td>
               </tr>
             ))}

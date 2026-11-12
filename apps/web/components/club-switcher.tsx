@@ -2,7 +2,9 @@
 
 import Link from "next/link";
 import { useEffect, useRef } from "react";
-import type { Club } from "@/lib/types";
+import type { ClubRef } from "@/lib/types";
+
+type Club = Pick<ClubRef, "slug" | "name" | "short_name">;
 
 type ClubSwitcherProps = {
   clubs: Club[];
@@ -44,7 +46,7 @@ export function ClubSwitcher({ clubs, current }: ClubSwitcherProps) {
   return (
     <details ref={ref} className="menu">
       <summary className="btn btn-secondary" aria-label={`Change club, current: ${current.name}`}>
-        <span className="font-mono text-xs font-semibold">{current.code}</span>
+        <span className="font-mono text-xs font-semibold">{current.short_name}</span>
         <span className="hidden sm:inline">Change club</span>
         <span aria-hidden="true" className="text-fg-subtle">
           ▾
@@ -62,7 +64,7 @@ export function ClubSwitcher({ clubs, current }: ClubSwitcherProps) {
                   if (ref.current) ref.current.open = false;
                 }}
               >
-                <span className="w-8 font-mono text-xs text-fg-subtle">{club.code}</span>
+                <span className="w-8 font-mono text-xs text-fg-subtle">{club.short_name}</span>
                 <span className="truncate">{club.name}</span>
               </Link>
             </li>

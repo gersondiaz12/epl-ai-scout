@@ -1,42 +1,50 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { connection } from "next/server";
+import { Suspense } from "react";
 import { ClubSwitcher } from "@/components/club-switcher";
-import { SampleDataNotice } from "@/components/sample-data-notice";
+import { DataSourceNote } from "@/components/data-source-note";
+import { PageLoading } from "@/components/page-loading";
 import { SiteHeader } from "@/components/site-header";
+import { SquadTable } from "@/components/squad-table";
 import { StatChip } from "@/components/ui/stat-chip";
-import { formatMinutes, formatNumber } from "@/lib/format";
-import { getClub, getClubs, getSquad } from "@/lib/sample-data";
-import { POSITIONS } from "@/lib/types";
-
-export function generateStaticParams() {
-  return getClubs().map((club) => ({ slug: club.slug }));
-}
+import { formatNumber } from "@/lib/format";
+import { getClub, getClubs } from "@/lib/api";
 
 export async function generateMetadata({
   params,
 }: PageProps<"/clubs/[slug]">): Promise<Metadata> {
+  await connection();
   const { slug } = await params;
-  const club = getClub(slug);
-  return { title: club ? `${club.name} · EPL AI Scout` : "Club not found · EPL AI Scout" };
+  const club = await getClub(slug).catch(() => null);
+  return { title: club ? `${club.name} · EPL AI Scout` : "EPL AI Scout" };
 }
 
-export default async function ClubPage({ params }: PageProps<"/clubs/[slug]">) {
+export default function ClubPage({ params }: PageProps<"/clubs/[slug]">) {
+  return (
+    <Suspense fallback={<PageLoading label="Loading squad…" />}>
+      <ClubContent params={params} />
+    </Suspense>
+  );
+}
+
+async function ClubContent({ params }: Pick<PageProps<"/clubs/[slug]">, "params">) {
+  await connection();
   const { slug } = await params;
-  const club = getClub(slug);
+  const [club, clubs] = await Promise.all([getClub(slug), getClubs()]);
   if (!club) notFound();
 
-  const squad = getSquad(club.slug).toSorted(
-    (a, b) =>
-      POSITIONS.indexOf(a.position) - POSITIONS.indexOf(b.position) || b.minutes - a.minutes,
-  );
-  const totalGoals = squad.reduce((sum, p) => sum + p.goals, 0);
-  const totalAssists = squad.reduce((sum, p) => sum + p.assists, 0);
+  const squad = club.squad.filter((p) => p.is_current_club);
+  const ages = squad.flatMap((p) => (p.age === null ? [] : [p.age]));
+  const averageAge = ages.length ? ages.reduce((sum, a) => sum + a, 0) / ages.length : null;
+  const under21 = ages.filter((a) => a < 21).length;
+  const playersUsed = club.squad.filter((p) => p.appearances > 0).length;
 
   return (
     <>
-      <SiteHeader>
-        <ClubSwitcher key={club.slug} clubs={getClubs()} current={club} />
+      <SiteHeader season={club.season}>
+        <ClubSwitcher key={club.slug} clubs={clubs} current={club} />
       </SiteHeader>
 
       <main className="container-page flex-1 py-6 sm:py-10">
@@ -49,117 +57,46 @@ export default async function ClubPage({ params }: PageProps<"/clubs/[slug]">) {
             <span className="text-fg">{club.name}</span>
           </nav>
 
-          <header className="flex items-center gap-4">
-            <span className="club-code h-12 w-16 text-sm" aria-hidden="true">
-              {club.code}
-            </span>
-            <div className="flex min-w-0 flex-col gap-1">
-              <h1 className="text-xl font-semibold sm:text-2xl">{club.name}</h1>
-              <p className="cluster text-fg-muted [--cluster-gap:0.5rem]">
-                <span>
-                  {club.ground} · {club.city}
-                </span>
-                {club.promoted ? <span className="tag">Promoted 2026</span> : null}
-              </p>
+          <header className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+            <div className="flex items-center gap-4">
+              <span className="club-code h-12 w-16 text-sm" aria-hidden="true">
+                {club.short_name}
+              </span>
+              <div className="flex min-w-0 flex-col gap-1">
+                <h1 className="text-xl font-semibold sm:text-2xl">{club.name}</h1>
+                <p className="cluster text-fg-muted [--cluster-gap:0.5rem]">
+                  {club.ground || club.city ? (
+                    <span>{[club.ground, club.city].filter(Boolean).join(" · ")}</span>
+                  ) : null}
+                  {club.promoted ? <span className="tag">Promoted</span> : null}
+                </p>
+              </div>
+            </div>
+            <div className="cluster [--cluster-gap:0.375rem]">
+              <StatChip
+                label="Avg age"
+                value={averageAge === null ? null : formatNumber(averageAge, 1)}
+              />
+              <StatChip label="Under 21" value={formatNumber(under21)} />
+              <StatChip label="Players used" value={formatNumber(playersUsed)} />
             </div>
           </header>
 
-          <section className="panel" aria-labelledby="squad-heading">
-            <div className="panel-header flex-wrap items-center">
-              <h2 id="squad-heading" className="font-semibold">
-                Squad
-              </h2>
-              <div className="cluster [--cluster-gap:0.375rem]">
-                <StatChip label="Players" value={formatNumber(squad.length)} />
-                {POSITIONS.map((pos) => (
-                  <StatChip
-                    key={pos}
-                    label={pos}
-                    value={formatNumber(squad.filter((p) => p.position === pos).length)}
-                  />
-                ))}
-              </div>
-            </div>
-            <div className="table-scroll rounded-t-none border-0">
-              <table className="data-table">
-                <caption className="sr-only">
-                  {club.name} squad with league appearances, minutes, goals and assists this
-                  season, sorted by position then minutes
-                </caption>
-                <thead>
-                  <tr>
-                    <th scope="colgroup" colSpan={3}>
-                      Player
-                    </th>
-                    <th scope="colgroup" colSpan={4} className="group-start">
-                      League 2026–27
-                    </th>
-                  </tr>
-                  <tr>
-                    <th scope="col" className="col-sticky">
-                      Name
-                    </th>
-                    <th scope="col">Pos</th>
-                    <th scope="col" className="num">
-                      Age
-                    </th>
-                    <th scope="col" className="num group-start">
-                      <abbr title="Appearances" className="no-underline">
-                        Apps
-                      </abbr>
-                    </th>
-                    <th scope="col" className="num">
-                      Mins
-                    </th>
-                    <th scope="col" className="num">
-                      <abbr title="Goals" className="no-underline">
-                        Gls
-                      </abbr>
-                    </th>
-                    <th scope="col" className="num">
-                      <abbr title="Assists" className="no-underline">
-                        Ast
-                      </abbr>
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {squad.map((player) => (
-                    <tr key={player.id}>
-                      <th scope="row" className="col-sticky font-medium">
-                        {player.name}
-                      </th>
-                      <td>
-                        <span className="pos-badge" data-pos={player.position}>
-                          {player.position}
-                        </span>
-                      </td>
-                      <td className="num">{formatNumber(player.age)}</td>
-                      <td className="num group-start">{formatNumber(player.appearances)}</td>
-                      <td className="num">{formatMinutes(player.minutes)}</td>
-                      <td className="num">{formatNumber(player.goals)}</td>
-                      <td className="num">{formatNumber(player.assists)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-                <tfoot>
-                  <tr>
-                    <th scope="row" colSpan={3}>
-                      Squad total
-                    </th>
-                    <td className="group-start" colSpan={2} />
-                    <td className="num">{formatNumber(totalGoals)}</td>
-                    <td className="num">{formatNumber(totalAssists)}</td>
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
-          </section>
+          <SquadTable players={club.squad} clubName={club.name} season={club.season} />
 
-          <SampleDataNotice>
-            Players, ages, appearances, minutes, goals and assists on this page are fictional
-            placeholders, not real {club.name} data.
-          </SampleDataNotice>
+          <div className="flex flex-col gap-2">
+            <p className="max-w-3xl text-xs text-fg-muted">
+              <strong className="font-medium text-fg">How to read this.</strong> Per-90 figures
+              are season totals divided by minutes played, times 90. They are left blank (–) for
+              players under {formatNumber(club.per90_min_minutes)} minutes, where one goal can look
+              like a star rate. <em className="not-italic">G+A</em> is goals plus assists,{" "}
+              <em className="not-italic">xG</em> is expected goals and{" "}
+              <em className="not-italic">xA</em> is expected assists. Players marked
+              &ldquo;Left&rdquo; have moved on; their figures are for this club only. Average age
+              and under-21s count the current squad.
+            </p>
+            <DataSourceNote />
+          </div>
         </div>
       </main>
     </>

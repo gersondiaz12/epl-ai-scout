@@ -8,7 +8,13 @@
     "dev:web": "npm run dev --workspace web",
     "build:web": "npm run build --workspace web",
     "lint:web": "npm run lint --workspace web",
-    "dev:api": "cd apps/api && uv run uvicorn app.main:app --reload"
+    "dev:api": "cd apps/api && uv run uvicorn app.main:app --reload",
+    "db:up": "docker compose up -d --wait db",
+    "db:down": "docker compose stop db",
+    "api:migrate": "cd apps/api && uv run alembic upgrade head",
+    "api:ingest": "cd apps/api && uv run python -m app.ingest.fpl",
+    "api:test": "cd apps/api && uv run pytest",
+    "api:lint": "cd apps/api && uv run ruff check . && uv run ruff format --check ."
   },
   "engines": {
     "node": ">=20.19"

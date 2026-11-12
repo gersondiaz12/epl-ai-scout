@@ -48,6 +48,26 @@ export function formatMinutes(value: number | null | undefined): string {
   return formatNumber(value, 0);
 }
 
+const monthYear = new Intl.DateTimeFormat("en-GB", {
+  month: "short",
+  year: "numeric",
+  timeZone: "UTC",
+});
+
+/** ISO date to month and year: "2028-06-30" -> "Jun 2028". */
+export function formatMonthYear(iso: string | null | undefined): string {
+  if (!iso) return MISSING;
+  const date = new Date(`${iso.slice(0, 10)}T00:00:00Z`);
+  return Number.isNaN(date.getTime()) ? MISSING : monthYear.format(date);
+}
+
+/** Market value in EUR, Transfermarkt style: 18_500_000 -> "€18.5m", 800_000 -> "€800k". */
+export function formatMarketValue(eur: number | null | undefined): string {
+  if (isMissing(eur)) return MISSING;
+  if (eur >= 1_000_000) return `€${formatNumber(eur / 1_000_000, 1)}m`;
+  return `€${formatNumber(eur / 1_000, 0)}k`;
+}
+
 /** Signed difference for comparisons: 0.12 -> "+0.12", -0.12 -> "−0.12". */
 export function formatDelta(value: number | null | undefined, decimals = 2): string {
   if (isMissing(value)) return MISSING;

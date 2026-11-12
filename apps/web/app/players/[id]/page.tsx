@@ -1,43 +1,26 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import type { ReactNode } from "react";
+import { connection } from "next/server";
+import { type ReactNode, Suspense } from "react";
 import { ClubSwitcher } from "@/components/club-switcher";
-import { SampleDataNotice } from "@/components/sample-data-notice";
+import { DataSourceNote } from "@/components/data-source-note";
+import { PageLoading } from "@/components/page-loading";
 import { SiteHeader } from "@/components/site-header";
 import { EmptySlot } from "@/components/ui/empty-slot";
 import { PercentileBar } from "@/components/ui/percentile-bar";
-import {
-  formatMarketValue,
-  formatMinutes,
-  formatMonthYear,
-  formatNumber,
-  formatPer90,
-} from "@/lib/format";
-import { PER90_MIN_MINUTES } from "@/lib/per90";
-import {
-  getAllPlayers,
-  getClubs,
-  getPlayer,
-  getPlayerPercentiles,
-} from "@/lib/sample-data";
-import { SEASON_LABEL, isFinalContractYear } from "@/lib/season";
+import { formatMinutes, formatNumber, formatPer90 } from "@/lib/format";
+import { getClubs, getPlayer } from "@/lib/api";
+import { formatSeason } from "@/lib/season";
 import { POSITION_LABELS, POSITION_NAMES } from "@/lib/types";
-
-export function generateStaticParams() {
-  return getAllPlayers().map((player) => ({ id: player.id }));
-}
 
 export async function generateMetadata({
   params,
 }: PageProps<"/players/[id]">): Promise<Metadata> {
+  await connection();
   const { id } = await params;
-  const found = getPlayer(id);
-  return {
-    title: found
-      ? `${found.player.name} · ${found.club.name} · EPL AI Scout`
-      : "Player not found · EPL AI Scout",
-  };
+  const player = await getPlayer(id).catch(() => null);
+  return { title: player ? `${player.name} · ${player.club.name} · EPL AI Scout` : "EPL AI Scout" };
 }
 
 function Fact({ label, children, sub }: { label: string; children: ReactNode; sub?: ReactNode }) {
@@ -50,20 +33,29 @@ function Fact({ label, children, sub }: { label: string; children: ReactNode; su
   );
 }
 
-export default async function PlayerPage({ params }: PageProps<"/players/[id]">) {
-  const { id } = await params;
-  const found = getPlayer(id);
-  if (!found) notFound();
+export default function PlayerPage({ params }: PageProps<"/players/[id]">) {
+  return (
+    <Suspense fallback={<PageLoading label="Loading player…" />}>
+      <PlayerContent params={params} />
+    </Suspense>
+  );
+}
 
-  const { player, club } = found;
-  const { poolSize, rows } = getPlayerPercentiles(player);
+async function PlayerContent({ params }: Pick<PageProps<"/players/[id]">, "params">) {
+  await connection();
+  const { id } = await params;
+  const [player, clubs] = await Promise.all([getPlayer(id), getClubs()]);
+  if (!player) notFound();
+
+  const { club, totals, percentiles } = player;
+  const season = formatSeason(player.season);
   const poolName = POSITION_LABELS[player.position].toLowerCase();
-  const finalYear = isFinalContractYear(player.contractExpiry);
+  const moved = player.by_club.length > 1;
 
   return (
     <>
-      <SiteHeader>
-        <ClubSwitcher key={club.slug} clubs={getClubs()} current={club} />
+      <SiteHeader season={player.season}>
+        <ClubSwitcher key={club.slug} clubs={clubs} current={club} />
       </SiteHeader>
 
       <main className="container-page flex-1 py-6 sm:py-10">
@@ -95,7 +87,7 @@ export default async function PlayerPage({ params }: PageProps<"/players/[id]">)
             </p>
           </header>
 
-          <dl className="facts grid-cols-2 sm:grid-cols-3 lg:grid-cols-6">
+          <dl className="facts grid-cols-2 lg:grid-cols-4">
             <Fact label="Club" sub={club.city}>
               <Link href={`/clubs/${club.slug}`} className="link-quiet block truncate">
                 {club.name}
@@ -110,17 +102,8 @@ export default async function PlayerPage({ params }: PageProps<"/players/[id]">)
               </span>
             </Fact>
             <Fact label="Age">{formatNumber(player.age)}</Fact>
-            <Fact label="League minutes" sub={`${formatNumber(player.appearances)} appearances`}>
-              {formatMinutes(player.minutes)}
-            </Fact>
-            <Fact
-              label="Contract expires"
-              sub={finalYear ? <span className="tag">Final year</span> : null}
-            >
-              {formatMonthYear(player.contractExpiry)}
-            </Fact>
-            <Fact label="Market value" sub="Fictional sample, EUR">
-              {formatMarketValue(player.marketValue)}
+            <Fact label="League minutes" sub={`${formatNumber(totals.appearances)} appearances`}>
+              {formatMinutes(totals.minutes)}
             </Fact>
           </dl>
 
@@ -128,16 +111,62 @@ export default async function PlayerPage({ params }: PageProps<"/players/[id]">)
           <section className="panel" aria-labelledby="league-heading">
             <div className="panel-header items-center">
               <h2 id="league-heading" className="font-semibold">
-                League {SEASON_LABEL}
+                League {season}
               </h2>
-              <p className="text-xs text-fg-muted">Season totals</p>
+              <p className="text-xs text-fg-muted">
+                {moved ? `Season totals across ${player.by_club.length} clubs` : "Season totals"}
+              </p>
             </div>
-            <dl className="facts grid-cols-2 rounded-t-none border-0 sm:grid-cols-4">
-              <Fact label="Appearances">{formatNumber(player.appearances)}</Fact>
-              <Fact label="Minutes">{formatMinutes(player.minutes)}</Fact>
-              <Fact label="Goals">{formatNumber(player.goals)}</Fact>
-              <Fact label="Assists">{formatNumber(player.assists)}</Fact>
+            <dl
+              className={`facts grid-cols-2 rounded-none border-0 sm:grid-cols-4 ${moved ? "border-b border-border" : "rounded-t-none"}`}
+            >
+              <Fact label="Appearances">{formatNumber(totals.appearances)}</Fact>
+              <Fact label="Minutes">{formatMinutes(totals.minutes)}</Fact>
+              <Fact label="Goals">{formatNumber(totals.goals)}</Fact>
+              <Fact label="Assists">{formatNumber(totals.assists)}</Fact>
             </dl>
+            {moved ? (
+              <div className="table-scroll rounded-t-none border-0">
+                <table className="data-table">
+                  <caption className="sr-only">League figures by club this season</caption>
+                  <thead>
+                    <tr>
+                      <th scope="col">Club</th>
+                      <th scope="col" className="num">
+                        Apps
+                      </th>
+                      <th scope="col" className="num">
+                        Mins
+                      </th>
+                      <th scope="col" className="num">
+                        Gls
+                      </th>
+                      <th scope="col" className="num">
+                        Ast
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {player.by_club.map((row) => (
+                      <tr key={row.club.slug}>
+                        <th scope="row" className="font-medium">
+                          <span className="flex items-center gap-2">
+                            <Link href={`/clubs/${row.club.slug}`} className="link-quiet">
+                              {row.club.name}
+                            </Link>
+                            <span className="tag">{row.is_current_club ? "Now" : "Left"}</span>
+                          </span>
+                        </th>
+                        <td className="num">{formatNumber(row.appearances)}</td>
+                        <td className="num">{formatMinutes(row.minutes)}</td>
+                        <td className="num">{formatNumber(row.goals)}</td>
+                        <td className="num">{formatNumber(row.assists)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : null}
           </section>
 
           <section className="panel" aria-labelledby="percentiles-heading">
@@ -146,15 +175,15 @@ export default async function PlayerPage({ params }: PageProps<"/players/[id]">)
                 Per 90 percentiles
               </h2>
               <p className="text-xs text-fg-muted">
-                vs {formatNumber(poolSize)} league {poolName} ·{" "}
-                {formatNumber(PER90_MIN_MINUTES)}+ mins · {SEASON_LABEL}
+                vs {formatNumber(percentiles.pool_size)} league {poolName} ·{" "}
+                {formatNumber(percentiles.min_minutes)}+ mins · {season}
               </p>
             </div>
             <div className="p-4">
-              {rows ? (
+              {percentiles.rows ? (
                 <div className="chart-block">
                   <div className="pct-list">
-                    {rows.map((row) => (
+                    {percentiles.rows.map((row) => (
                       <PercentileBar
                         key={row.key}
                         label={row.label}
@@ -166,19 +195,18 @@ export default async function PlayerPage({ params }: PageProps<"/players/[id]">)
                   <div className="chart-note flex flex-col gap-2">
                     <p>
                       Each bar ranks this player&apos;s rate per 90 minutes against the{" "}
-                      {formatNumber(poolSize)} Premier League {poolName} with at least{" "}
-                      {formatNumber(PER90_MIN_MINUTES)} league minutes this season. Other
+                      {formatNumber(percentiles.pool_size)} Premier League {poolName} with at least{" "}
+                      {formatNumber(percentiles.min_minutes)} league minutes this season. Other
                       positions are left out.
                     </p>
                     <p>
-                      The number on the right is the percentile: 80 means a higher rate than 80%
-                      of that group. The tick marks the median. The small figure beside each stat
-                      is the raw per-90 rate, from {formatMinutes(player.minutes)} minutes.
+                      The number on the right is the percentile: 80 means a better rate than 80% of
+                      that group. The tick marks the median. The small figure beside each stat is
+                      the raw per-90 rate, from {formatMinutes(totals.minutes)} minutes.
                     </p>
-                    {player.position === "GK" ? (
+                    {percentiles.rows.some((row) => !row.higher_is_better) ? (
                       <p>
-                        Goalkeeping metrics such as saves and goals prevented aren&apos;t in the
-                        sample data yet, so only progressive actions are compared.
+                        For xG conceded, lower is better, so conceding less ranks higher.
                       </p>
                     ) : null}
                   </div>
@@ -186,19 +214,19 @@ export default async function PlayerPage({ params }: PageProps<"/players/[id]">)
               ) : (
                 <p className="max-w-2xl text-fg-muted">
                   Not enough minutes to compare. {player.name} has played{" "}
-                  {formatMinutes(player.minutes)} league minutes; percentiles need at least{" "}
-                  {formatNumber(PER90_MIN_MINUTES)}, because rates over a few appearances swing
-                  too much to rank fairly.
+                  {formatMinutes(totals.minutes)} league minutes; percentiles need at least{" "}
+                  {formatNumber(percentiles.min_minutes)}, because rates over a few appearances
+                  swing too much to rank fairly.
                 </p>
               )}
             </div>
           </section>
 
           <div className="grid gap-4 md:grid-cols-2">
-            {/* TODO: predicted value. Comes from the apps/api valuation model; shown beside market value. */}
+            {/* TODO: predicted value. Comes from the apps/api valuation model. */}
             <EmptySlot slot="predicted-value" title="Predicted value">
-              A model estimate of this player&apos;s value will go here, next to the market value,
-              with the reasons behind it.
+              A model estimate of this player&apos;s value will go here, with the reasons behind
+              it.
             </EmptySlot>
             {/* TODO: similar players. Comes from apps/api; same-position players with a close per-90 profile. */}
             <EmptySlot slot="similar-players" title="Similar players">
@@ -206,10 +234,7 @@ export default async function PlayerPage({ params }: PageProps<"/players/[id]">)
             </EmptySlot>
           </div>
 
-          <SampleDataNotice>
-            This player and every figure on this page, including market value and percentiles,
-            are fictional placeholders.
-          </SampleDataNotice>
+          <DataSourceNote />
         </div>
       </main>
     </>
