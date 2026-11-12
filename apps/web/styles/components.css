@@ -99,6 +99,60 @@
     border-bottom: 1px solid var(--border);
   }
 
+  /* Reserved space for a feature that isn't built yet. Never holds numbers. */
+  .panel--slot {
+    background: transparent;
+    border-style: dashed;
+    border-color: var(--border-strong);
+  }
+  .panel--slot > .panel-header {
+    border-bottom-style: dashed;
+    border-bottom-color: var(--border-strong);
+  }
+
+  /*
+   * Key facts strip: <dl class="facts grid-cols-2 sm:grid-cols-3 …"><div><dt/><dd/></div></dl>.
+   * Hairlines between cells come from the 1px gap; pick column counts that
+   * divide the number of facts so no empty cell shows.
+   */
+  .facts {
+    display: grid;
+    gap: 1px;
+    background: var(--border);
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    overflow: hidden;
+  }
+  .facts > div {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    min-width: 0;
+    padding: 0.75rem 1rem;
+    background: var(--surface);
+  }
+  .facts dt {
+    font-size: var(--text-2xs);
+    line-height: 1rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--fg-subtle);
+  }
+  .facts dd {
+    min-width: 0;
+    font-size: 1.125rem;
+    line-height: 1.5rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums lining-nums;
+  }
+  .facts dd.facts__sub {
+    font-size: 0.75rem;
+    line-height: 1rem;
+    font-weight: 400;
+    color: var(--fg-muted);
+  }
+
   /* Small uppercase label for sections, filters, stat names. */
   .eyebrow {
     font-size: var(--text-2xs);
