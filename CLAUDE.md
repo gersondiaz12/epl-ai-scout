@@ -26,13 +26,12 @@ EPL AI Scout is a Premier League scouting platform: `apps/web` (Next.js) and `ap
 
 ## Data (apps/api)
 
-- Postgres 17 + pgvector runs in Docker (`docker-compose.yml`, host port 5433). Football tables are SQLAlchemy 2 models in `app/models.py`; every schema change is an Alembic migration (`uv run alembic revision --autogenerate`, then review it). `uv run alembic check` must report no drift.
-- apps/web will own its tables separately (Drizzle); never add web tables or cross-app foreign keys to the API's migrations.
-- Store totals, not rates. Per-90 values and percentiles are computed on read in `app/metrics.py`.
-- One `player_season_stats` row per (player, season, club): a mid-season transfer gives two rows.
-- External ids live in `club_source_ids` / `player_source_ids` as `(source, external_id)`. FPL uses its stable `code`, never the per-season `id`.
-- `app/ingest/fpl.py` reloads the current season in one transaction and rolls back unless every player's rows match FPL's season totals. Club names, grounds, cities and promotions come from `app/ingest/club_reference.py`.
-- apps/web reads data only through `apps/web/lib/api.ts` (server-only, `"use cache"`). Pages call `await connection()` inside `<Suspense>` so `next build` never needs the API. Keep `lib/types.ts` in step with `app/schemas.py`.
+- **Table ownership:** football tables belong to apps/api (SQLAlchemy 2 models, Alembic migrations). App tables (users, shortlists) will belong to apps/web, managed with Drizzle. Neither side migrates the other's tables, and there are no cross-app foreign keys. Every schema change is a reviewed Alembic migration, and `uv run alembic check` must report no drift.
+- **Seasons** are keyed by label (`"2026-27"`). Exactly one is marked current, and the API defaults to it when no `season` is given. Season-scoped data hangs off the season: one stats row per (player, season, club), so a mid-season transfer gives two rows.
+- **Source ids:** players and clubs carry external ids as `(source, external_id)` rows, one per source. Store only ids that are stable across seasons (FPL's `code`, never its per-season `id`). A new source adds rows, not columns.
+- Store totals, not rates. Per-90 values and percentiles are computed on read.
+- The ingest rolls back unless every player's rows match the source's season totals.
+- apps/web reads data only through `lib/api.ts`, inside `<Suspense>` after `await connection()`, so `next build` never needs the API. Keep `lib/types.ts` in step with `app/schemas.py`.
 
 ## Working in the repo
 
@@ -46,5 +45,5 @@ EPL AI Scout is a Premier League scouting platform: `apps/web` (Next.js) and `ap
 - **Next.js 16 has breaking changes.** Read the relevant guide in `node_modules/next/dist/docs/` before writing Next.js code (see `apps/web/AGENTS.md`).
 - **Node ≥ 20.19 is required.** Tailwind 4.3 loads the ESM-only `magic-string`; older Node fails with `require() of ES Module ... magic-string ... not supported`. Turbopack uses the `node` first on PATH.
 - **`position` is a reserved word in Postgres type names**, so the enum type is `player_position` (the column is still `position`).
-- **The `.env.*` read deny rule also blocks `.env.example`.** The apps default to the local Docker database, so no `.env` is needed; document variables in the README instead.
+- **The API's settings come from `app/config.py` (pydantic-settings), which loads `apps/api/.env`.** Claude can't read or write `.env` files (deny rule, which also blocks `.env.example`), so never open them. Check the connection through `settings` with `make_url(...).render_as_string(hide_password=True)`, and ask the user to edit `.env`.
 - **`.gitignore` ignores all `data/` and `cache/` directories and `*.csv`, `*.parquet`, `*.pkl` and `*.joblib` files repo-wide.** Narrow these rules before committing fixtures or sample data.

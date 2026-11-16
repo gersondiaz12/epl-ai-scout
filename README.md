@@ -19,6 +19,7 @@ Prerequisites: Node.js 20.19+ (24 LTS recommended, see `.nvmrc`), npm, Python 3.
 npm install              # web dependencies (npm workspaces)
 (cd apps/api && uv sync) # api dependencies
 
+# create apps/api/.env with DATABASE_URL first (see Environment variables)
 npm run db:up            # Postgres + pgvector on localhost:5433
 npm run api:migrate      # create the football tables
 npm run api:ingest       # load the current season from Fantasy Premier League (~20 s)
@@ -57,12 +58,16 @@ npm run build:web   # doesn't need the API running
 
 ## Environment variables
 
-Both apps work locally with no `.env` file. Override as needed:
+The API reads its settings from environment variables, then `apps/api/.env`. Create that file before the first run:
+
+```bash
+printf 'DATABASE_URL=postgresql+psycopg://scout:scout@localhost:5433/epl_scout\n' > apps/api/.env
+```
 
 | App | Variable | Default |
 |---|---|---|
-| api | `DATABASE_URL` | `postgresql+psycopg://scout:scout@localhost:5433/epl_scout` |
-| api | `TEST_DATABASE_URL` | the same server, database `epl_scout_test` |
+| api | `DATABASE_URL` | required. The value above matches `docker-compose.yml`; keep the `postgresql+psycopg://` driver prefix. |
+| api | `TEST_DATABASE_URL` | the `DATABASE_URL` server, with `_test` added to the database name |
 | web | `API_URL` | `http://localhost:8000` |
 
 Keep secrets in `.env` files. Every `.env*` file is gitignored.
