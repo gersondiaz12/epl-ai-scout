@@ -19,7 +19,7 @@ from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import date, datetime
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 
@@ -184,6 +184,18 @@ def reconcile(element: Json, rows: list[StatsRow]) -> list[str]:
     ]
 
 
+def parse_form(element: Json) -> Decimal | None:
+    """FPL's form ("5.2", can be negative), or None when missing or unparseable."""
+    raw = element.get("form")
+    if raw is None or str(raw).strip() == "":
+        return None
+    try:
+        value = Decimal(str(raw))
+    except InvalidOperation:
+        return None
+    return value if value.is_finite() else None
+
+
 def slugify(name: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
 
@@ -288,9 +300,14 @@ def load(
     fixtures_by_id = {f["id"]: f for f in fixtures}
     problems: list[str] = []
     values: list[dict[str, Any]] = []
+    form_missing: list[str] = []
     for e in bootstrap["elements"]:
         rows = stats_rows(e, history_totals(histories.get(e["id"], []), fixtures_by_id), team_codes)
         problems += reconcile(e, rows)
+        # Form is a player-level snapshot, so it goes on the current-club row only.
+        form = parse_form(e)
+        if form is None:
+            form_missing.append(f"{e['web_name']} ({e['code']}): form={e.get('form')!r}")
         for r in rows:
             t = r.totals
             values.append(
@@ -308,12 +325,20 @@ def load(
                     "xa": t.xa,
                     "xg_conceded": t.xg_conceded,
                     "saves": t.saves,
+                    "form": form if r.is_current_club else None,
                     "source": SOURCE,
                 }
             )
     if problems:
         raise ReconciliationError(
             f"{len(problems)} mismatches against FPL totals, e.g.:\n" + "\n".join(problems[:10])
+        )
+    if form_missing:
+        # Kept, with form stored as null (shown as "Not yet available"), never dropped.
+        log.warning(
+            "%d players have no usable FPL form, stored as null, e.g.:\n%s",
+            len(form_missing),
+            "\n".join(form_missing[:10]),
         )
 
     # Upsert on (player, season, club): existing rows keep their id, so a figure
@@ -349,6 +374,7 @@ def load(
         "stats_rows": len(values),
         "players_with_two_clubs": len(values) - len(bootstrap["elements"]),
         "stale_rows_removed": len(stale),
+        "form_missing": len(form_missing),
     }
 
 

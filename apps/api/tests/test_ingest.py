@@ -1,5 +1,6 @@
 import json
 from datetime import date
+from decimal import Decimal
 
 import httpx
 import pytest
@@ -10,6 +11,7 @@ from app.ingest.fpl import (
     ReconciliationError,
     history_totals,
     load,
+    parse_form,
     player_name,
     reconcile,
     season_label,
@@ -71,9 +73,54 @@ def test_load_writes_one_row_per_player_club(session_factory):
         "stats_rows": 5,
         "players_with_two_clubs": 1,
         "stale_rows_removed": 0,
+        "form_missing": 0,
     }
     with session_factory() as session:
         assert session.scalar(select(func.count()).select_from(ClubSeason)) == 2
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("6.5", Decimal("6.5")),
+        ("-0.8", Decimal("-0.8")),
+        ("0.0", Decimal("0.0")),
+        (None, None),
+        ("", None),
+        ("n/a", None),
+        ("NaN", None),
+    ],
+)
+def test_parse_form(raw, expected):
+    assert parse_form({"form": raw}) == expected
+
+
+def test_form_is_stored_on_the_current_club_row_only(session_factory):
+    with session_factory() as session, session.begin():
+        load(session, fpl.bootstrap(), fpl.FIXTURES, fpl.HISTORIES)
+    with session_factory() as session:
+        rows = session.scalars(select(PlayerSeasonStats)).all()
+        forms = {(r.player.display_name, r.is_current_club): r.form for r in rows}
+    assert forms == {
+        ("Striker", True): Decimal("6.5"),
+        ("Mover", True): Decimal("3.0"),  # now at ARS
+        ("Mover", False): None,  # former club COV: form is the player's, not the club's
+        ("Keeper", True): Decimal("0.0"),
+        ("Forward", True): Decimal("-0.8"),
+    }
+
+
+def test_missing_form_is_kept_as_null_and_counted(session_factory, caplog):
+    bootstrap = fpl.bootstrap()
+    bootstrap["elements"][3]["form"] = ""
+    with session_factory() as session, session.begin():
+        summary = load(session, bootstrap, fpl.FIXTURES, fpl.HISTORIES)
+    assert summary["form_missing"] == 1
+    assert summary["stats_rows"] == 5  # the player is kept, not dropped
+    assert "1 players have no usable FPL form" in caplog.text
+    with session_factory() as session:
+        row = session.scalar(select(PlayerSeasonStats).where(PlayerSeasonStats.minutes == 360))
+        assert row.form is None
 
 
 def stats_ids(session_factory) -> dict[tuple[int, int], int]:
@@ -91,14 +138,18 @@ def test_rerun_upserts_in_place_and_keeps_row_ids(session_factory):
     histories = {**fpl.HISTORIES, 101: [*fpl.HISTORIES[101], fpl.match(4, False, goals=1)]}
     bootstrap = fpl.bootstrap()
     striker = bootstrap["elements"][0]
-    striker.update(minutes=360, goals_scored=4, expected_goals="2.00")
+    striker.update(minutes=360, goals_scored=4, expected_goals="2.00", form="8.1")
     with session_factory() as session, session.begin():
         load(session, bootstrap, fpl.FIXTURES, histories)
 
     assert stats_ids(session_factory) == first
     with session_factory() as session:
-        row = session.scalar(select(PlayerSeasonStats).where(PlayerSeasonStats.minutes == 360))
-        assert (row.goals, row.appearances) == (4, 4)
+        row = session.scalar(
+            select(PlayerSeasonStats).where(
+                PlayerSeasonStats.minutes == 360, PlayerSeasonStats.goals == 4
+            )
+        )
+        assert (row.goals, row.appearances, row.form) == (4, 4, Decimal("8.1"))
 
 
 def test_rerun_removes_rows_fpl_no_longer_reports(session_factory):

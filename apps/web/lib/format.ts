@@ -68,6 +68,20 @@ export function formatMonthYear(iso: string | null | undefined): string {
   return Number.isNaN(date.getTime()) ? MISSING : monthYear.format(date);
 }
 
+const dayMonthYear = new Intl.DateTimeFormat("en-GB", {
+  day: "numeric",
+  month: "short",
+  year: "numeric",
+  timeZone: "Europe/London",
+});
+
+/** ISO timestamp to a UK date: "2026-11-17T22:03:44Z" -> "17 Nov 2026". */
+export function formatDate(iso: string | null | undefined): string {
+  if (!iso) return MISSING;
+  const date = new Date(iso);
+  return Number.isNaN(date.getTime()) ? MISSING : dayMonthYear.format(date);
+}
+
 /** Market value in EUR, Transfermarkt style: 18_500_000 -> "€18.5m", 800_000 -> "€800k". */
 export function formatMarketValue(eur: number | null | undefined): string {
   if (isMissing(eur)) return MISSING;

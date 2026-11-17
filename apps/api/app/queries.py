@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.metrics import Totals
 from app.models import PlayerSeasonStats, Season
+from app.schemas import ClubRef
 
 
 def get_season(session: Session, label: str | None) -> Season:
@@ -47,3 +48,14 @@ def age_on(birth_date: date | None, on: date) -> int | None:
     if birth_date is None:
         return None
     return on.year - birth_date.year - ((on.month, on.day) < (birth_date.month, birth_date.day))
+
+
+def current_row(rows: list[PlayerSeasonStats]) -> PlayerSeasonStats:
+    """A player's row at the club the source lists them at today."""
+    return next((r for r in rows if r.is_current_club), rows[0])
+
+
+def club_ref(row: PlayerSeasonStats) -> ClubRef:
+    return ClubRef(
+        slug=row.club.slug, name=row.club.name, short_name=row.club.short_name, city=row.club.city
+    )

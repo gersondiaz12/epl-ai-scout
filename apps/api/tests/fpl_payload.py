@@ -5,6 +5,8 @@ ingest reads). Two clubs, four players:
 - Mover (MID): one match for COV, then one for ARS, where FPL lists them now.
 - Keeper (COV): no minutes, so no match history.
 - Forward (COV): 4 full matches, no goals.
+
+FPL form: Striker 6.5, Mover 3.0, Keeper 0.0, Forward -0.8 (form can be negative).
 """
 
 from typing import Any
@@ -51,7 +53,13 @@ HISTORIES: dict[int, list[dict[str, Any]]] = {
 
 
 def element(
-    id_: int, code: int, name: str, team: int, element_type: int, birth: str | None
+    id_: int,
+    code: int,
+    name: str,
+    team: int,
+    element_type: int,
+    birth: str | None,
+    form: str = "0.0",
 ) -> dict[str, Any]:
     history = HISTORIES.get(id_, [])
     return {
@@ -69,6 +77,7 @@ def element(
         "expected_goals": f"{sum(float(m['expected_goals']) for m in history):.2f}",
         "expected_assists": "0.00",
         "saves": sum(m["saves"] for m in history),
+        "form": form,
     }
 
 
@@ -77,9 +86,9 @@ def bootstrap() -> dict[str, Any]:
         "events": EVENTS,
         "teams": TEAMS,
         "elements": [
-            element(101, 9001, "Striker", ARS, 4, "2000-01-15"),
-            element(102, 9002, "Mover", ARS, 3, "1998-06-01"),
+            element(101, 9001, "Striker", ARS, 4, "2000-01-15", form="6.5"),
+            element(102, 9002, "Mover", ARS, 3, "1998-06-01", form="3.0"),
             element(103, 9003, "Keeper", COV, 1, None),
-            element(104, 9004, "Forward", COV, 4, "1995-03-03"),
+            element(104, 9004, "Forward", COV, 4, "1995-03-03", form="-0.8"),
         ],
     }

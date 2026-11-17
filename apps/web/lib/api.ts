@@ -1,6 +1,6 @@
 import "server-only";
 import { cacheLife, cacheTag } from "next/cache";
-import type { ClubDetail, ClubSummary, PlayerProfile, Season } from "./types";
+import type { ClubDetail, ClubSummary, InForm, PlayerProfile, Season } from "./types";
 
 /**
  * Reads football data from apps/api. Server-only: the API URL never reaches
@@ -54,4 +54,12 @@ export async function getPlayer(id: string): Promise<PlayerProfile | null> {
   cacheTag("football");
   if (!/^\d+$/.test(id)) return null;
   return get<PlayerProfile>(`/players/${id}`);
+}
+
+/** The league's players ranked by FPL form (top 50), ranked by the API. */
+export async function getInForm(): Promise<InForm> {
+  "use cache";
+  cacheLife("hours");
+  cacheTag("football");
+  return getRequired<InForm>("/in-form?limit=50");
 }

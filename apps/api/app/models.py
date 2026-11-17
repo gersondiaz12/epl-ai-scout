@@ -177,6 +177,11 @@ class PlayerSeasonStats(Base):
     xa: Mapped[Decimal] = mapped_column(Numeric(6, 2))
     xg_conceded: Mapped[Decimal] = mapped_column(Numeric(6, 2))
     saves: Mapped[int] = mapped_column(Integer)
+    # FPL's form: average FPL points per match over the last 30 days, as of
+    # ingested_at. A snapshot, not a total, and it belongs to the player, so it
+    # is set on the current-club row only (null on former-club rows). Can be
+    # negative.
+    form: Mapped[Decimal | None] = mapped_column(Numeric(4, 1))
 
     source: Mapped[str] = mapped_column(String(32))
     ingested_at: Mapped[datetime] = mapped_column(

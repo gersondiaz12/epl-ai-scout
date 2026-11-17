@@ -8,7 +8,8 @@ from app.models import Base
 
 config = context.config
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # Keep loggers created before migrations run (e.g. the ingest's) working.
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 # Tests pass their own URL via `-x db_url=...`; otherwise use app settings.
 db_url = context.get_x_argument(as_dictionary=True).get("db_url") or settings.database_url

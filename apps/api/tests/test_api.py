@@ -86,3 +86,47 @@ def test_percentiles_null_under_minutes_threshold(client, loaded):
 )
 def test_unknown_resources_404(client, loaded, url):
     assert client.get(url).status_code == 404
+
+
+def test_in_form_ranks_by_form_above_the_minutes_threshold(client, loaded):
+    body = client.get("/in-form").json()
+    assert body["season"] == "2026-27"
+    assert body["min_minutes"] == 270
+    # Striker (270 mins) and Forward (360) qualify; Mover (180) and Keeper (0) don't.
+    assert body["pool_size"] == 2
+    assert body["without_form"] == 0
+    assert body["form_updated_at"] is not None
+    assert [(p["rank"], p["name"], p["form"]) for p in body["players"]] == [
+        (1, "Striker Test", 6.5),
+        (2, "Forward Test", -0.8),
+    ]
+    striker = body["players"][0]
+    assert striker["club"]["slug"] == "arsenal"
+    assert (striker["minutes"], striker["goals"], striker["per90"]["ga"]) == (270, 3, 1.0)
+
+
+def test_in_form_ties_share_a_rank_and_minutes_order_them(client, session_factory):
+    bootstrap = fpl.bootstrap()
+    bootstrap["elements"][3]["form"] = "6.5"  # Forward level with Striker
+    with session_factory() as session, session.begin():
+        load(session, bootstrap, fpl.FIXTURES, fpl.HISTORIES)
+    players = client.get("/in-form").json()["players"]
+    assert [(p["rank"], p["name"]) for p in players] == [(1, "Forward Test"), (1, "Striker Test")]
+
+
+def test_in_form_counts_but_does_not_rank_players_without_form(client, session_factory):
+    bootstrap = fpl.bootstrap()
+    bootstrap["elements"][3]["form"] = None
+    with session_factory() as session, session.begin():
+        load(session, bootstrap, fpl.FIXTURES, fpl.HISTORIES)
+    body = client.get("/in-form").json()
+    assert (body["pool_size"], body["without_form"]) == (1, 1)
+    assert [p["name"] for p in body["players"]] == ["Striker Test"]
+
+
+def test_in_form_limit(client, loaded):
+    body = client.get("/in-form?limit=1").json()
+    assert [p["name"] for p in body["players"]] == ["Striker Test"]
+    assert body["pool_size"] == 2  # the pool is still counted in full
+    assert client.get("/in-form?limit=0").status_code == 422
+    assert client.get("/in-form?season=1999-00").status_code == 404

@@ -29,7 +29,7 @@ EPL AI Scout is a Premier League scouting platform: `apps/web` (Next.js) and `ap
 - **Table ownership:** football tables belong to apps/api (SQLAlchemy 2 models, Alembic migrations). App tables (users, shortlists) will belong to apps/web, managed with Drizzle. Neither side migrates the other's tables, and there are no cross-app foreign keys. Every schema change is a reviewed Alembic migration, and `uv run alembic check` must report no drift.
 - **Seasons** are keyed by label (`"2026-27"`). Exactly one is marked current, and the API defaults to it when no `season` is given. Season-scoped data hangs off the season: one stats row per (player, season, club), so a mid-season transfer gives two rows.
 - **Source ids:** players and clubs carry external ids as `(source, external_id)` rows, one per source. Store only ids that are stable across seasons (FPL's `code`, never its per-season `id`). A new source adds rows, not columns.
-- Store totals, not rates. Per-90 values and percentiles are computed on read.
+- Store totals, not rates. Per-90 values and percentiles are computed on read. The exception is a source's own snapshot figure that can't be rebuilt from totals, such as FPL `form` (`player_season_stats.form`): store it as given, on the current-club row only, and say when it was taken (`ingested_at`). Rankings built on it (`GET /in-form`) are ordered in the API, never in the web app.
 - The ingest rolls back unless every player's rows match the source's season totals.
 - apps/web reads data only through `lib/api.ts`, inside `<Suspense>` after `await connection()`, so `next build` never needs the API. Keep `lib/types.ts` in step with `app/schemas.py`.
 

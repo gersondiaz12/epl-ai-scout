@@ -17,9 +17,8 @@ from app.metrics import (
     sum_totals,
 )
 from app.models import PlayerSeasonStats, Position
-from app.queries import age_on, get_season, row_totals, season_rows
+from app.queries import age_on, club_ref, current_row, get_season, row_totals, season_rows
 from app.schemas import (
-    ClubRef,
     ClubSeasonTotals,
     Per90,
     PercentileRow,
@@ -34,16 +33,6 @@ SessionDep = Annotated[Session, Depends(get_session)]
 SeasonQuery = Annotated[
     str | None, Query(description="Season label, e.g. 2026-27. Default: current.")
 ]
-
-
-def club_ref(row: PlayerSeasonStats) -> ClubRef:
-    return ClubRef(
-        slug=row.club.slug, name=row.club.name, short_name=row.club.short_name, city=row.club.city
-    )
-
-
-def current_row(rows: list[PlayerSeasonStats]) -> PlayerSeasonStats:
-    return next((r for r in rows if r.is_current_club), rows[0])
 
 
 def build_percentiles(position: Position, totals: Totals, pool: list[Totals]) -> Percentiles:

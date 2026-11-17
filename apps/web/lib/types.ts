@@ -106,3 +106,31 @@ export type PlayerProfile = {
     rows: PercentileRow[] | null;
   };
 };
+
+export type InFormPlayer = {
+  /** League rank by FPL form; equal form shares a rank, ordered by minutes. */
+  rank: number;
+  player_id: number;
+  name: string;
+  position: Position;
+  club: ClubRef;
+  /** FPL's form: average FPL points per match over the last 30 days. Can be negative. */
+  form: number;
+  appearances: number;
+  minutes: number;
+  goals: number;
+  assists: number;
+  per90: Per90;
+};
+
+export type InForm = {
+  season: string;
+  min_minutes: number;
+  /** Players ranked: at least min_minutes this season and a form figure. */
+  pool_size: number;
+  /** Players with enough minutes but no form figure from FPL, so not ranked. */
+  without_form: number;
+  /** When the ranked players' form was ingested (ISO timestamp). */
+  form_updated_at: string | null;
+  players: InFormPlayer[];
+};

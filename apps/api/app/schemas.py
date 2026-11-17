@@ -1,6 +1,6 @@
 """Response models. apps/web mirrors these in apps/web/lib/types.ts."""
 
-from datetime import date
+from datetime import date, datetime
 
 from pydantic import BaseModel
 
@@ -117,3 +117,26 @@ class PlayerOut(BaseModel):
     by_club: list[ClubSeasonTotals]
     per90: Per90
     percentiles: Percentiles
+
+
+class InFormPlayerOut(BaseModel):
+    rank: int  # shared when form is equal; minutes order the tie
+    player_id: int
+    name: str
+    position: Position
+    club: ClubRef
+    form: float
+    appearances: int
+    minutes: int
+    goals: int
+    assists: int
+    per90: Per90
+
+
+class InFormOut(BaseModel):
+    season: str
+    min_minutes: int
+    pool_size: int  # players ranked: at least min_minutes and a form figure
+    without_form: int  # players with min_minutes but no form figure, so not ranked
+    form_updated_at: datetime | None  # when the ranked players' form was ingested
+    players: list[InFormPlayerOut]
