@@ -5,8 +5,9 @@
 
 Raw responses are cached under data/raw/fpl/<date>/ (gitignored), so a rerun on
 the same day doesn't hit FPL again and a load can be traced to its inputs.
-Stats rows for the season are replaced in one transaction, and the load is
-rolled back unless every player's summed rows match FPL's season totals.
+Stats rows are upserted on (player, season, club) in one transaction, so row ids
+stay stable across re-runs, and the load is rolled back unless every player's
+summed rows match FPL's season totals.
 """
 
 import argparse
