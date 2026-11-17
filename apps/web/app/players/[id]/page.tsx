@@ -8,6 +8,7 @@ import { DataSourceNote } from "@/components/data-source-note";
 import { PageLoading } from "@/components/page-loading";
 import { SiteHeader } from "@/components/site-header";
 import { EmptySlot } from "@/components/ui/empty-slot";
+import { NotAvailable } from "@/components/ui/not-available";
 import { PercentileBar } from "@/components/ui/percentile-bar";
 import { formatMinutes, formatNumber, formatPer90 } from "@/lib/format";
 import { getClubs, getPlayer } from "@/lib/api";
@@ -87,9 +88,13 @@ async function PlayerContent({ params }: Pick<PageProps<"/players/[id]">, "param
             </p>
           </header>
 
-          <dl className="facts grid-cols-2 lg:grid-cols-4">
+          <dl className="facts grid-cols-2 sm:grid-cols-3 lg:grid-cols-6">
             <Fact label="Club" sub={club.city}>
-              <Link href={`/clubs/${club.slug}`} className="link-quiet block truncate">
+              <Link
+                href={`/clubs/${club.slug}`}
+                className="link-quiet block truncate"
+                title={club.name}
+              >
                 {club.name}
               </Link>
             </Fact>
@@ -101,9 +106,18 @@ async function PlayerContent({ params }: Pick<PageProps<"/players/[id]">, "param
                 {POSITION_NAMES[player.position]}
               </span>
             </Fact>
-            <Fact label="Age">{formatNumber(player.age)}</Fact>
+            <Fact label="Age">
+              {player.age === null ? <NotAvailable /> : formatNumber(player.age)}
+            </Fact>
             <Fact label="League minutes" sub={`${formatNumber(totals.appearances)} appearances`}>
               {formatMinutes(totals.minutes)}
+            </Fact>
+            {/* FPL doesn't provide these. Shown as unavailable, never estimated. */}
+            <Fact label="Contract expires">
+              <NotAvailable />
+            </Fact>
+            <Fact label="Market value">
+              <NotAvailable />
             </Fact>
           </dl>
 

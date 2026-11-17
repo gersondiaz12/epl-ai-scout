@@ -14,7 +14,7 @@ EPL AI Scout is a Premier League scouting platform: `apps/web` (Next.js) and `ap
 
 - Tokens live in `apps/web/styles/tokens.css` and component classes in `apps/web/styles/components.css`. Use the token utilities (`bg-surface`, `text-fg-muted`, `border-border`, `pos-*`, `pct-*`) instead of raw Tailwind palette colours.
 - No club crests, league logos or player photos anywhere.
-- Format every stat through `lib/format.ts`. Missing values render as an en dash, never `0`. Numeric columns are right-aligned with tabular figures (`.num`).
+- Format every stat through `lib/format.ts`. Values the data source doesn't provide show "Not yet available" (`components/ui/not-available.tsx`), never an estimate. An en dash means not applicable (e.g. per-90 under 270 minutes), never `0`. Numeric columns are right-aligned with tabular figures (`.num`).
 - Colour is never the only signal: percentile colours sit next to the number, and position colours next to the GK/DEF/MID/FWD label.
 - Radars: fixed scales per position group, and always show minutes played and the comparison pool.
 - Every chart gets a short plain-language explanation beside it (`.chart-block` + `.chart-note`).

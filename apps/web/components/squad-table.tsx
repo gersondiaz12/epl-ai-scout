@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useId, useState } from "react";
+import { NotAvailable } from "@/components/ui/not-available";
 import { SortHeader } from "@/components/ui/sort-header";
 import { formatMinutes, formatNumber, formatPer90 } from "@/lib/format";
 import { formatSeason } from "@/lib/season";
@@ -222,7 +223,7 @@ function PlayerRow({ row: r, showPosition }: { row: SquadPlayer; showPosition: b
           )}
         </span>
       </th>
-      <td className="num">{formatNumber(r.age)}</td>
+      <td className="num">{r.age === null ? <NotAvailable /> : formatNumber(r.age)}</td>
       <td className="num group-start">{formatNumber(r.appearances)}</td>
       <td className="num">{formatMinutes(r.minutes)}</td>
       <td className="num">{formatNumber(r.goals)}</td>

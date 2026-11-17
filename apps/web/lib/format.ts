@@ -6,6 +6,13 @@
 
 export const MISSING = "–"; // –
 
+/**
+ * For a value the data source doesn't provide yet (contract expiry, market
+ * value, an unknown birth date). Never replaced with an estimate. MISSING
+ * stays for "not applicable", such as per-90 rates under the minutes threshold.
+ */
+export const NOT_YET_AVAILABLE = "Not yet available";
+
 const MINUS = "−"; // −
 
 const formatters = new Map<number, Intl.NumberFormat>();

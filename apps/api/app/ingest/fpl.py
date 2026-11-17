@@ -23,7 +23,8 @@ from pathlib import Path
 from typing import Any
 
 import httpx
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, func, select, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from app.db import SessionLocal
@@ -58,7 +59,10 @@ class ReconciliationError(Exception):
 
 
 class FplClient:
-    """GETs FPL endpoints with retries, caching each response as JSON."""
+    """GETs FPL endpoints with retries. Each response body is written to disk
+    exactly as received, before it is parsed, so a load can always be replayed
+    from (or debugged against) the raw input.
+    """
 
     def __init__(self, cache_dir: Path, refresh: bool = False) -> None:
         self.cache_dir = cache_dir
@@ -72,7 +76,7 @@ class FplClient:
     def get(self, path: str) -> Any:
         cache_file = self.cache_dir / (path.strip("/").replace("/", "__") + ".json")
         if cache_file.exists() and not self.refresh:
-            return json.loads(cache_file.read_text(encoding="utf-8"))
+            return json.loads(cache_file.read_bytes())
         for attempt in range(4):
             try:
                 response = self.http.get(path)
@@ -82,10 +86,13 @@ class FplClient:
                 if attempt == 3:
                     raise
                 time.sleep(2**attempt)
-        data = response.json()
+        # Raw bytes to disk first (via a temp file, so a crash never leaves a
+        # half-written cache), then parse what was saved.
         cache_file.parent.mkdir(parents=True, exist_ok=True)
-        cache_file.write_text(json.dumps(data), encoding="utf-8")
-        return data
+        partial = cache_file.with_suffix(".part")
+        partial.write_bytes(response.content)
+        partial.replace(cache_file)
+        return json.loads(cache_file.read_bytes())
 
 
 # ---------- Pure transforms (unit-tested) ----------
@@ -227,7 +234,6 @@ def load(
         for sid in session.scalars(select(ClubSourceId).where(ClubSourceId.source == SOURCE))
     }
     team_codes = {t["id"]: t["code"] for t in bootstrap["teams"]}
-    session.execute(delete(ClubSeason).where(ClubSeason.season_id == season.id))
     for team in bootstrap["teams"]:
         ref = CLUB_REFERENCE.get(team["code"])
         club = club_by_code.get(team["code"])
@@ -240,13 +246,25 @@ def load(
         club.short_name = team["short_name"]
         club.ground, club.city = (ref.ground, ref.city) if ref else (None, None)
         session.flush()
-        session.add(
-            ClubSeason(
-                club_id=club.id,
-                season_id=season.id,
-                promoted=team["code"] in PROMOTED.get(label, set()),
+        membership = {
+            "club_id": club.id,
+            "season_id": season.id,
+            "promoted": team["code"] in PROMOTED.get(label, set()),
+        }
+        session.execute(
+            pg_insert(ClubSeason)
+            .values(membership)
+            .on_conflict_do_update(
+                index_elements=["club_id", "season_id"], set_={"promoted": membership["promoted"]}
             )
         )
+    # Clubs no longer in this season's league (only happens if FPL corrects its list).
+    season_club_ids = [club_by_code[t["code"]].id for t in bootstrap["teams"]]
+    session.execute(
+        delete(ClubSeason).where(
+            ClubSeason.season_id == season.id, ClubSeason.club_id.not_in(season_club_ids)
+        )
+    )
 
     # Players, keyed by FPL's stable element code.
     player_by_code: dict[int, Player] = {
@@ -265,50 +283,71 @@ def load(
         player.birth_date = date.fromisoformat(e["birth_date"]) if e.get("birth_date") else None
     session.flush()
 
-    # Stats: replace this season's rows from this source.
+    # Stats: build every row and reconcile against FPL's totals before writing anything.
     fixtures_by_id = {f["id"]: f for f in fixtures}
-    session.execute(
-        delete(PlayerSeasonStats).where(
-            PlayerSeasonStats.season_id == season.id, PlayerSeasonStats.source == SOURCE
-        )
-    )
     problems: list[str] = []
-    row_count = 0
+    values: list[dict[str, Any]] = []
     for e in bootstrap["elements"]:
-        by_team = history_totals(histories.get(e["id"], []), fixtures_by_id)
-        rows = stats_rows(e, by_team, team_codes)
+        rows = stats_rows(e, history_totals(histories.get(e["id"], []), fixtures_by_id), team_codes)
         problems += reconcile(e, rows)
         for r in rows:
             t = r.totals
-            session.add(
-                PlayerSeasonStats(
-                    player_id=player_by_code[r.element_code].id,
-                    season_id=season.id,
-                    club_id=club_by_code[r.team_code].id,
-                    position=r.position,
-                    is_current_club=r.is_current_club,
-                    appearances=t.appearances,
-                    minutes=t.minutes,
-                    goals=t.goals,
-                    assists=t.assists,
-                    xg=t.xg,
-                    xa=t.xa,
-                    xg_conceded=t.xg_conceded,
-                    saves=t.saves,
-                    source=SOURCE,
-                )
+            values.append(
+                {
+                    "player_id": player_by_code[r.element_code].id,
+                    "season_id": season.id,
+                    "club_id": club_by_code[r.team_code].id,
+                    "position": r.position,
+                    "is_current_club": r.is_current_club,
+                    "appearances": t.appearances,
+                    "minutes": t.minutes,
+                    "goals": t.goals,
+                    "assists": t.assists,
+                    "xg": t.xg,
+                    "xa": t.xa,
+                    "xg_conceded": t.xg_conceded,
+                    "saves": t.saves,
+                    "source": SOURCE,
+                }
             )
-            row_count += 1
     if problems:
         raise ReconciliationError(
             f"{len(problems)} mismatches against FPL totals, e.g.:\n" + "\n".join(problems[:10])
         )
+
+    # Upsert on (player, season, club): existing rows keep their id, so a figure
+    # shown in the app stays traceable to the same row across re-runs.
+    stmt = pg_insert(PlayerSeasonStats).values(values)
+    session.execute(
+        stmt.on_conflict_do_update(
+            constraint="uq_player_season_stats_player_season_club",
+            set_={
+                **{
+                    col: stmt.excluded[col]
+                    for col in values[0]
+                    if col not in ("player_id", "season_id", "club_id")
+                },
+                "ingested_at": func.now(),
+            },
+        )
+    )
+    # Rows FPL no longer reports (e.g. a player removed from the game).
+    keys = {(v["player_id"], v["club_id"]) for v in values}
+    existing = session.execute(
+        select(PlayerSeasonStats.id, PlayerSeasonStats.player_id, PlayerSeasonStats.club_id).where(
+            PlayerSeasonStats.season_id == season.id, PlayerSeasonStats.source == SOURCE
+        )
+    )
+    stale = [row.id for row in existing if (row.player_id, row.club_id) not in keys]
+    if stale:
+        session.execute(delete(PlayerSeasonStats).where(PlayerSeasonStats.id.in_(stale)))
     session.flush()
     return {
         "clubs": len(bootstrap["teams"]),
         "players": len(bootstrap["elements"]),
-        "stats_rows": row_count,
-        "players_with_two_clubs": row_count - len(bootstrap["elements"]),
+        "stats_rows": len(values),
+        "players_with_two_clubs": len(values) - len(bootstrap["elements"]),
+        "stale_rows_removed": len(stale),
     }
 
 

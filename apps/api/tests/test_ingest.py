@@ -1,9 +1,12 @@
+import json
 from datetime import date
 
+import httpx
 import pytest
 from sqlalchemy import func, select
 
 from app.ingest.fpl import (
+    FplClient,
     ReconciliationError,
     history_totals,
     load,
@@ -62,17 +65,82 @@ def test_reconcile_reports_differences_from_fpl_totals():
 def test_load_writes_one_row_per_player_club(session_factory):
     with session_factory() as session, session.begin():
         summary = load(session, fpl.bootstrap(), fpl.FIXTURES, fpl.HISTORIES)
-    assert summary == {"clubs": 2, "players": 4, "stats_rows": 5, "players_with_two_clubs": 1}
+    assert summary == {
+        "clubs": 2,
+        "players": 4,
+        "stats_rows": 5,
+        "players_with_two_clubs": 1,
+        "stale_rows_removed": 0,
+    }
     with session_factory() as session:
         assert session.scalar(select(func.count()).select_from(ClubSeason)) == 2
 
 
-def test_load_is_idempotent(session_factory):
-    for _ in range(2):
-        with session_factory() as session, session.begin():
-            load(session, fpl.bootstrap(), fpl.FIXTURES, fpl.HISTORIES)
+def stats_ids(session_factory) -> dict[tuple[int, int], int]:
     with session_factory() as session:
-        assert session.scalar(select(func.count()).select_from(PlayerSeasonStats)) == 5
+        rows = session.scalars(select(PlayerSeasonStats)).all()
+        return {(r.player_id, r.club_id): r.id for r in rows}
+
+
+def test_rerun_upserts_in_place_and_keeps_row_ids(session_factory):
+    with session_factory() as session, session.begin():
+        load(session, fpl.bootstrap(), fpl.FIXTURES, fpl.HISTORIES)
+    first = stats_ids(session_factory)
+
+    # Second run with an extra match for the striker: same rows, updated totals.
+    histories = {**fpl.HISTORIES, 101: [*fpl.HISTORIES[101], fpl.match(4, False, goals=1)]}
+    bootstrap = fpl.bootstrap()
+    striker = bootstrap["elements"][0]
+    striker.update(minutes=360, goals_scored=4, expected_goals="2.00")
+    with session_factory() as session, session.begin():
+        load(session, bootstrap, fpl.FIXTURES, histories)
+
+    assert stats_ids(session_factory) == first
+    with session_factory() as session:
+        row = session.scalar(select(PlayerSeasonStats).where(PlayerSeasonStats.minutes == 360))
+        assert (row.goals, row.appearances) == (4, 4)
+
+
+def test_rerun_removes_rows_fpl_no_longer_reports(session_factory):
+    with session_factory() as session, session.begin():
+        load(session, fpl.bootstrap(), fpl.FIXTURES, fpl.HISTORIES)
+    bootstrap = fpl.bootstrap()
+    bootstrap["elements"] = [e for e in bootstrap["elements"] if e["web_name"] != "Keeper"]
+    with session_factory() as session, session.begin():
+        summary = load(session, bootstrap, fpl.FIXTURES, fpl.HISTORIES)
+    assert summary["stale_rows_removed"] == 1
+    with session_factory() as session:
+        assert session.scalar(select(func.count()).select_from(PlayerSeasonStats)) == 4
+
+
+def test_raw_response_is_cached_before_parsing(tmp_path):
+    body = b'{"elements": [], "note": "caf\xc3\xa9"}'
+    client = FplClient(tmp_path)
+    client.http = httpx.Client(
+        base_url="https://fpl.test",
+        transport=httpx.MockTransport(lambda _: httpx.Response(200, content=body)),
+    )
+    assert client.get("/bootstrap-static/")["note"] == "café"
+    assert (tmp_path / "bootstrap-static.json").read_bytes() == body  # byte-for-byte
+
+    # A body that isn't valid JSON is still saved, then fails to parse.
+    client.http = httpx.Client(
+        base_url="https://fpl.test",
+        transport=httpx.MockTransport(lambda _: httpx.Response(200, content=b"<html>")),
+    )
+    with pytest.raises(json.JSONDecodeError):
+        client.get("/fixtures/")
+    assert (tmp_path / "fixtures.json").read_bytes() == b"<html>"
+    assert not list(tmp_path.glob("*.part"))
+
+
+def test_cached_response_is_reused_without_a_request(tmp_path):
+    (tmp_path / "fixtures.json").write_bytes(b"[1, 2]")
+    client = FplClient(tmp_path)
+    client.http = httpx.Client(
+        base_url="https://fpl.test", transport=httpx.MockTransport(lambda _: pytest.fail("fetched"))
+    )
+    assert client.get("/fixtures/") == [1, 2]
 
 
 def test_load_rolls_back_when_totals_do_not_reconcile(session_factory):

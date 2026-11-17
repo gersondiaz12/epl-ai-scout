@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
+import { NotAvailable } from "@/components/ui/not-available";
 import { SortHeader } from "@/components/ui/sort-header";
 import { MISSING, formatNumber } from "@/lib/format";
 import { compareValues, nextSort, type SortDir, type SortState } from "@/lib/sort";
@@ -184,9 +185,9 @@ export function ClubPicker({ clubs }: { clubs: ClubSummary[] }) {
                     </div>
                   </div>
                 </th>
-                <td className="hidden text-fg-muted md:table-cell">{club.ground ?? MISSING}</td>
+                <td className="hidden text-fg-muted md:table-cell">{club.ground ?? <NotAvailable />}</td>
                 <td className="num max-[22.5rem]:hidden">
-                  {club.average_age === null ? MISSING : formatNumber(club.average_age, 1)}
+                  {club.average_age === null ? <NotAvailable /> : formatNumber(club.average_age, 1)}
                 </td>
                 <td className="group-start">
                   {club.top_scorer ? (

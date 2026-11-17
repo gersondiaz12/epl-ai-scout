@@ -9,7 +9,7 @@ import { PageLoading } from "@/components/page-loading";
 import { SiteHeader } from "@/components/site-header";
 import { SquadTable } from "@/components/squad-table";
 import { StatChip } from "@/components/ui/stat-chip";
-import { formatNumber } from "@/lib/format";
+import { NOT_YET_AVAILABLE, formatNumber } from "@/lib/format";
 import { getClub, getClubs } from "@/lib/api";
 
 export async function generateMetadata({
@@ -75,7 +75,7 @@ async function ClubContent({ params }: Pick<PageProps<"/clubs/[slug]">, "params"
             <div className="cluster [--cluster-gap:0.375rem]">
               <StatChip
                 label="Avg age"
-                value={averageAge === null ? null : formatNumber(averageAge, 1)}
+                value={averageAge === null ? NOT_YET_AVAILABLE : formatNumber(averageAge, 1)}
               />
               <StatChip label="Under 21" value={formatNumber(under21)} />
               <StatChip label="Players used" value={formatNumber(playersUsed)} />
