@@ -134,3 +134,22 @@ export type InForm = {
   form_updated_at: string | null;
   players: InFormPlayer[];
 };
+
+export type PositionPlayer = {
+  player_id: number;
+  name: string;
+  /** The player's current club; totals span every club this season. */
+  club: ClubRef;
+  appearances: number;
+  minutes: number;
+  /** null rates under min_minutes. */
+  per90: Per90;
+};
+
+export type PositionGroup = {
+  season: string;
+  position: Position;
+  min_minutes: number;
+  /** Every league player in the position, most minutes first. */
+  players: PositionPlayer[];
+};

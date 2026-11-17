@@ -140,3 +140,19 @@ class InFormOut(BaseModel):
     without_form: int  # players with min_minutes but no form figure, so not ranked
     form_updated_at: datetime | None  # when the ranked players' form was ingested
     players: list[InFormPlayerOut]
+
+
+class PositionPlayerOut(BaseModel):
+    player_id: int
+    name: str
+    club: ClubRef
+    appearances: int
+    minutes: int
+    per90: Per90  # null rates under min_minutes
+
+
+class PositionOut(BaseModel):
+    season: str
+    position: Position
+    min_minutes: int
+    players: list[PositionPlayerOut]  # most minutes first

@@ -11,17 +11,20 @@ type SiteHeaderProps = {
 export function SiteHeader({ season, children }: SiteHeaderProps) {
   return (
     <header className="sticky top-0 z-30 border-b border-border bg-surface/90 backdrop-blur">
-      <div className="container-page flex h-(--header-h) items-center justify-between gap-4">
-        <div className="flex min-w-0 items-baseline gap-4">
+      <div className="container-page flex h-(--header-h) items-center justify-between gap-2 sm:gap-4">
+        <div className="flex min-w-0 items-baseline gap-2 sm:gap-4">
           <Link href="/" className="flex shrink-0 items-baseline gap-2 font-semibold tracking-tight">
             EPL AI Scout
             {season ? (
               <span className="eyebrow hidden sm:inline">{formatSeason(season)}</span>
             ) : null}
           </Link>
-          <nav aria-label="Main" className="text-sm">
+          <nav aria-label="Main" className="flex items-baseline gap-2 text-[0.8125rem] sm:gap-3 sm:text-sm">
             <Link href="/in-form" className="link-quiet whitespace-nowrap">
               In form
+            </Link>
+            <Link href="/positions" className="link-quiet whitespace-nowrap">
+              Positions
             </Link>
           </nav>
         </div>

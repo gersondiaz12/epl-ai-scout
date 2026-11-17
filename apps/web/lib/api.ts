@@ -1,6 +1,14 @@
 import "server-only";
 import { cacheLife, cacheTag } from "next/cache";
-import type { ClubDetail, ClubSummary, InForm, PlayerProfile, Season } from "./types";
+import type {
+  ClubDetail,
+  ClubSummary,
+  InForm,
+  PlayerProfile,
+  Position,
+  PositionGroup,
+  Season,
+} from "./types";
 
 /**
  * Reads football data from apps/api. Server-only: the API URL never reaches
@@ -62,4 +70,12 @@ export async function getInForm(): Promise<InForm> {
   cacheLife("hours");
   cacheTag("football");
   return getRequired<InForm>("/in-form?limit=50");
+}
+
+/** Every league player whose current position is `position`. */
+export async function getPositionGroup(position: Position): Promise<PositionGroup> {
+  "use cache";
+  cacheLife("hours");
+  cacheTag("football");
+  return getRequired<PositionGroup>(`/positions/${position}`);
 }

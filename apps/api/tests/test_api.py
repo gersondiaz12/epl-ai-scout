@@ -130,3 +130,34 @@ def test_in_form_limit(client, loaded):
     assert body["pool_size"] == 2  # the pool is still counted in full
     assert client.get("/in-form?limit=0").status_code == 422
     assert client.get("/in-form?season=1999-00").status_code == 404
+
+
+def test_position_lists_every_player_by_current_position(client, loaded):
+    body = client.get("/positions/FWD").json()
+    assert (body["season"], body["position"], body["min_minutes"]) == ("2026-27", "FWD", 270)
+    # Forward 360 mins, Striker 270: most minutes first.
+    assert [(p["name"], p["minutes"]) for p in body["players"]] == [
+        ("Forward Test", 360),
+        ("Striker Test", 270),
+    ]
+    assert body["players"][1]["per90"]["ga"] == 1.0
+
+
+def test_position_includes_players_under_the_threshold_with_null_rates(client, loaded):
+    keeper = client.get("/positions/GK").json()["players"]
+    assert [(p["name"], p["minutes"]) for p in keeper] == [("Keeper Test", 0)]
+    assert set(keeper[0]["per90"].values()) == {None}
+
+
+def test_position_totals_span_clubs_and_show_the_current_club(client, loaded):
+    (mover,) = client.get("/positions/MID").json()["players"]
+    assert (mover["club"]["slug"], mover["minutes"], mover["appearances"]) == ("arsenal", 180, 2)
+
+
+@pytest.mark.parametrize("url", ["/positions/XYZ", "/positions/fwd"])
+def test_position_rejects_unknown_groups(client, loaded, url):
+    assert client.get(url).status_code == 422
+
+
+def test_position_unknown_season_404(client, loaded):
+    assert client.get("/positions/GK?season=1999-00").status_code == 404
