@@ -5,10 +5,13 @@ import type {
   ClubSummary,
   InForm,
   PlayerProfile,
+  PlayerSearchParams,
+  PlayerSearchResult,
   Position,
   PositionGroup,
   Season,
 } from "./types";
+import { SEARCH_LIMIT } from "./types";
 
 /**
  * Reads football data from apps/api. Server-only: the API URL never reaches
@@ -78,4 +81,22 @@ export async function getPositionGroup(position: Position): Promise<PositionGrou
   cacheLife("hours");
   cacheTag("football");
   return getRequired<PositionGroup>(`/positions/${position}`);
+}
+
+/** Players by name (accent-insensitive, matched by the API), position and age range. */
+export async function searchPlayers({
+  q,
+  position,
+  minAge,
+  maxAge,
+}: PlayerSearchParams): Promise<PlayerSearchResult> {
+  "use cache";
+  cacheLife("hours");
+  cacheTag("football");
+  const params = new URLSearchParams({ limit: String(SEARCH_LIMIT) });
+  if (q) params.set("q", q);
+  if (position) params.set("position", position);
+  if (minAge !== null) params.set("min_age", String(minAge));
+  if (maxAge !== null) params.set("max_age", String(maxAge));
+  return getRequired<PlayerSearchResult>(`/players?${params}`);
 }

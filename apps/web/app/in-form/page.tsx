@@ -28,7 +28,7 @@ async function InFormContent() {
 
   return (
     <>
-      <SiteHeader season={inForm.season} />
+      <SiteHeader season={inForm.season} current="in-form" />
 
       <main className="container-page flex-1 py-6 sm:py-10">
         <div className="stack [--stack-gap:1.5rem]">

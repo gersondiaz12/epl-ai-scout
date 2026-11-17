@@ -156,3 +156,23 @@ class PositionOut(BaseModel):
     position: Position
     min_minutes: int
     players: list[PositionPlayerOut]  # most minutes first
+
+
+class PlayerSearchRow(BaseModel):
+    player_id: int
+    name: str
+    position: Position
+    age: int | None
+    club: ClubRef  # current club; totals span every club this season
+    appearances: int
+    minutes: int
+    goals: int
+    assists: int
+
+
+class PlayerSearchOut(BaseModel):
+    season: str
+    total: int  # all matches; `players` holds the first `limit`
+    # Left out only because an age filter is set and FPL has no birth date for them.
+    unknown_age_excluded: int
+    players: list[PlayerSearchRow]  # best match first, then most minutes

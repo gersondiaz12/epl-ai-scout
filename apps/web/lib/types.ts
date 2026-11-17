@@ -153,3 +153,38 @@ export type PositionGroup = {
   /** Every league player in the position, most minutes first. */
   players: PositionPlayer[];
 };
+
+export type PlayerSearchRow = {
+  player_id: number;
+  name: string;
+  position: Position;
+  age: number | null;
+  /** Current club; totals span every club this season. */
+  club: ClubRef;
+  appearances: number;
+  minutes: number;
+  goals: number;
+  assists: number;
+};
+
+export type PlayerSearchResult = {
+  season: string;
+  /** All matches; `players` holds the first page. */
+  total: number;
+  /** Left out only because an age filter is set and FPL has no birth date for them. */
+  unknown_age_excluded: number;
+  /** Best match first, then most minutes. */
+  players: PlayerSearchRow[];
+};
+
+export type PlayerSearchParams = {
+  q: string;
+  position: Position | null;
+  minAge: number | null;
+  maxAge: number | null;
+};
+
+/** Age bounds the API accepts for the search filter. */
+export const SEARCH_AGE_MIN = 15;
+export const SEARCH_AGE_MAX = 45;
+export const SEARCH_LIMIT = 100;

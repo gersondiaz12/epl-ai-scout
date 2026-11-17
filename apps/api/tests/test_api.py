@@ -1,3 +1,5 @@
+from datetime import date
+
 import pytest
 
 from app.ingest.club_reference import PROMOTED
@@ -161,3 +163,72 @@ def test_position_rejects_unknown_groups(client, loaded, url):
 
 def test_position_unknown_season_404(client, loaded):
     assert client.get("/positions/GK?season=1999-00").status_code == 404
+
+
+class FixedDate(date):
+    @classmethod
+    def today(cls):
+        return cls(2026, 11, 17)  # Striker 26, Mover 28, Forward 31, Keeper unknown
+
+
+@pytest.fixture
+def search(client, session_factory, monkeypatch):
+    """Load the payload with an accented name, and pin today's date for ages."""
+    from app.routers import search as search_router
+
+    monkeypatch.setattr(search_router, "date", FixedDate)
+    bootstrap = fpl.bootstrap()
+    striker = bootstrap["elements"][0]
+    striker.update(first_name="Martin", second_name="Ødegaard", web_name="Ødegaard")
+    with session_factory() as session, session.begin():
+        load(session, bootstrap, fpl.FIXTURES, fpl.HISTORIES)
+    return lambda params="": client.get(f"/players?{params}")
+
+
+def names(response):
+    return [p["name"] for p in response.json()["players"]]
+
+
+@pytest.mark.parametrize("q", ["Odegaard", "odegaard", "ØDEGAARD", "martin ode", "Ødegaard"])
+def test_search_is_accent_and_case_insensitive(search, q):
+    assert names(search(f"q={q}")) == ["Martin Ødegaard"]
+
+
+def test_search_without_query_lists_everyone_by_minutes(search):
+    body = search().json()
+    assert body["total"] == 4
+    assert names(search()) == ["Forward Test", "Martin Ødegaard", "Mover Test", "Keeper Test"]
+
+
+def test_search_filters_by_position(search):
+    assert names(search("position=FWD")) == ["Forward Test", "Martin Ødegaard"]
+    assert names(search("q=test&position=GK")) == ["Keeper Test"]
+
+
+def test_search_age_range_is_inclusive_and_counts_unknown_ages(search):
+    body = search("min_age=26&max_age=28").json()
+    assert [(p["name"], p["age"]) for p in body["players"]] == [
+        ("Martin Ødegaard", 26),
+        ("Mover Test", 28),
+    ]
+    assert body["unknown_age_excluded"] == 1  # Keeper has no birth date
+    assert search().json()["unknown_age_excluded"] == 0  # no age filter, nobody excluded
+
+
+def test_search_combines_filters_and_reports_the_full_total(search):
+    body = search("q=test&position=FWD&max_age=40&limit=1").json()
+    assert body["total"] == 1
+    assert names(search("limit=2")) == ["Forward Test", "Martin Ødegaard"]
+    assert search("limit=2").json()["total"] == 4
+
+
+def test_search_rows_carry_totals_across_clubs(search):
+    (mover,) = search("q=mover").json()["players"]
+    assert (mover["club"]["slug"], mover["minutes"], mover["appearances"]) == ("arsenal", 180, 2)
+
+
+@pytest.mark.parametrize(
+    "params", ["min_age=30&max_age=20", "min_age=10", "max_age=60", "position=XX"]
+)
+def test_search_rejects_bad_filters(search, params):
+    assert search(params).status_code == 422
