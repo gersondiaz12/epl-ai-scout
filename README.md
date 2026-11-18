@@ -24,6 +24,7 @@ npm run db:up            # Postgres + pgvector on localhost:5433
 npm run api:migrate      # create the football tables
 npm run api:ingest       # load the current season from Fantasy Premier League (~20 s)
 npm run api:ingest:history  # optional: load the 3 previous seasons' totals (after api:ingest)
+npm run api:ingest:transfermarkt  # optional: Transfermarkt market values and contracts (after api:ingest)
 
 npm run dev:api          # http://localhost:8000 (docs at /docs)
 npm run dev:web          # http://localhost:3000
@@ -46,6 +47,7 @@ Run from the repo root.
 | `api:migrate` | `uv run alembic upgrade head` | Applies any database migrations not yet run (it creates the tables on first run). Safe to repeat. |
 | `api:ingest` | `uv run python -m app.ingest.fpl` | Downloads the current season from Fantasy Premier League and reloads the season's clubs, players and stats in one transaction. It rolls back unless every player's stored rows match FPL's season totals. |
 | `api:ingest:history` | `uv run python -m app.ingest.fpl_history` | Loads season totals for the 3 seasons before the current one from FPL's per-player history into `player_season_totals`. Run it after `api:ingest`. It reads every player's history once per day (cached) and reports rows it couldn't link, couldn't read, or left out. Add `-- --seasons N` for a different number of seasons. |
+| `api:ingest:transfermarkt` | `uv run python -m app.ingest.transfermarkt` | Downloads the dcaribou/transfermarkt-datasets snapshot (CC0-1.0, used with Transfermarkt's written permission) into `apps/api/data/raw/transfermarkt/<build date>/`, links its players to ours, and loads their market-value history and contract expiry. Re-running the same snapshot writes nothing. Run it after `api:ingest`. The dataset stopped updating in July 2026: values end 12 June 2026. Add `-- --refresh` to download again. |
 | `api:test` | `uv run pytest` | Runs the API tests against `epl_scout_test`, never the main database. |
 | `api:lint` | `ruff check` and `ruff format --check` | Lints and checks formatting of the API code. |
 

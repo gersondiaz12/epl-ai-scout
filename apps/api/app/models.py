@@ -10,6 +10,7 @@ from datetime import date, datetime
 from decimal import Decimal
 
 from sqlalchemy import (
+    BigInteger,
     CheckConstraint,
     Date,
     DateTime,
@@ -24,6 +25,7 @@ from sqlalchemy import (
     func,
     text,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 # Stable constraint names so Alembic migrations are deterministic.
@@ -276,4 +278,85 @@ class PlayerSeasonTotals(Base):
             "AND xg >= 0 AND xa >= 0 AND xg_conceded >= 0 AND " + DEFENSIVE_NON_NEGATIVE,
             name="non_negative",
         ),
+    )
+
+
+class SourceSnapshot(Base):
+    """One downloaded version of a bulk dataset, so every row loaded from it
+    can be traced to the exact files used.
+
+    `version` is the SHA-256 of the sorted per-file SHA-256s, so the same files
+    always give the same version.
+    """
+
+    __tablename__ = "source_snapshots"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    source: Mapped[str] = mapped_column(String(32))  # "transfermarkt"
+    dataset: Mapped[str] = mapped_column(String(128))  # "dcaribou/transfermarkt-datasets"
+    version: Mapped[str] = mapped_column(String(64))
+    files: Mapped[dict] = mapped_column(JSONB)  # {file: {sha256, etag, last_modified, url}}
+    upstream_commit: Mapped[str | None] = mapped_column(String(40))
+    built_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Latest dated record in the files (e.g. the last valuation): how current the data is.
+    data_through: Mapped[date | None] = mapped_column(Date)
+    retrieved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+    __table_args__ = (
+        UniqueConstraint("source", "version", name="uq_source_snapshots_source_version"),
+    )
+
+
+class PlayerMarketValue(Base):
+    """A market value the source published for a player on a date (EUR, as given).
+
+    Club and league are the source's own labels at that date (the player may
+    have been outside the Premier League), not links to our clubs.
+    """
+
+    __tablename__ = "player_market_values"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    player_id: Mapped[int] = mapped_column(ForeignKey("players.id", ondelete="CASCADE"))
+    source: Mapped[str] = mapped_column(String(32))
+    valued_on: Mapped[date] = mapped_column(Date)
+    value_eur: Mapped[int] = mapped_column(BigInteger)
+    club_name: Mapped[str | None] = mapped_column(String(128))
+    competition_id: Mapped[str | None] = mapped_column(String(16))  # e.g. "GB1"
+    snapshot_id: Mapped[int] = mapped_column(ForeignKey("source_snapshots.id"))
+    ingested_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    player: Mapped[Player] = relationship()
+    snapshot: Mapped[SourceSnapshot] = relationship()
+
+    __table_args__ = (
+        UniqueConstraint(
+            "player_id", "source", "valued_on", name="uq_player_market_values_player_source_date"
+        ),
+        CheckConstraint("value_eur >= 0", name="non_negative"),
+    )
+
+
+class PlayerContract(Base):
+    """When the player's contract expires, as the source reported it in a snapshot."""
+
+    __tablename__ = "player_contracts"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    player_id: Mapped[int] = mapped_column(ForeignKey("players.id", ondelete="CASCADE"))
+    source: Mapped[str] = mapped_column(String(32))
+    expires_on: Mapped[date] = mapped_column(Date)
+    club_name: Mapped[str | None] = mapped_column(String(128))  # the source's club at that time
+    snapshot_id: Mapped[int] = mapped_column(ForeignKey("source_snapshots.id"))
+    ingested_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    player: Mapped[Player] = relationship()
+    snapshot: Mapped[SourceSnapshot] = relationship()
+
+    __table_args__ = (
+        UniqueConstraint("player_id", "source", name="uq_player_contracts_player_source"),
     )
