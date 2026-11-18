@@ -139,6 +139,9 @@ def test_rerun_upserts_in_place_and_keeps_row_ids(session_factory):
     bootstrap = fpl.bootstrap()
     striker = bootstrap["elements"][0]
     striker.update(minutes=360, goals_scored=4, expected_goals="2.00", form="8.1")
+    # The extra match also adds to the defensive counts.
+    for key in fpl.SUMMED:
+        striker[key] += fpl.match(4, False)[key]
     with session_factory() as session, session.begin():
         load(session, bootstrap, fpl.FIXTURES, histories)
 
@@ -201,3 +204,26 @@ def test_load_rolls_back_when_totals_do_not_reconcile(session_factory):
         load(session, bootstrap, fpl.FIXTURES, fpl.HISTORIES)
     with session_factory() as session:
         assert session.scalar(select(func.count()).select_from(PlayerSeasonStats)) == 0
+
+
+def test_current_season_rows_store_defensive_counts_per_club(session_factory):
+    with session_factory() as session, session.begin():
+        load(session, fpl.bootstrap(), fpl.FIXTURES, fpl.HISTORIES)
+    with session_factory() as session:
+        rows = session.scalars(select(PlayerSeasonStats)).all()
+        got = {
+            (r.player.display_name, r.is_current_club): (r.starts, r.tackles, r.cbi, r.recoveries)
+            for r in rows
+        }
+    assert got[("Striker", True)] == (3, 3, 6, 9)
+    # The mover's two matches split by club, one each.
+    assert got[("Mover", True)] == (1, 1, 2, 3)
+    assert got[("Mover", False)] == (1, 1, 2, 3)
+    assert got[("Keeper", True)] == (0, 0, 0, 0)  # no minutes: real zeros, not unknown
+
+
+def test_reconcile_checks_the_defensive_counts():
+    element = fpl.bootstrap()["elements"][0]
+    rows = stats_rows(element, history_totals(fpl.HISTORIES[101], FIXTURES), TEAM_CODES)
+    problems = reconcile(element | {"tackles": 99}, rows)
+    assert problems == ["Striker (9001) tackles: rows 3 != fpl 99"]

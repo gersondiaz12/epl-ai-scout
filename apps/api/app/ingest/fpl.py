@@ -124,6 +124,13 @@ def history_totals(history: list[Json], fixtures: dict[int, Json]) -> dict[int, 
             xa=Decimal(match["expected_assists"]),
             xg_conceded=Decimal(match["expected_goals_conceded"]),
             saves=match["saves"],
+            starts=match["starts"],
+            tackles=match["tackles"],
+            cbi=match["clearances_blocks_interceptions"],
+            recoveries=match["recoveries"],
+            goals_conceded=match["goals_conceded"],
+            clean_sheets=match["clean_sheets"],
+            penalties_saved=match["penalties_saved"],
         )
     return dict(by_team)
 
@@ -176,6 +183,13 @@ def reconcile(element: Json, rows: list[StatsRow]) -> list[str]:
         "xg": (total.xg, Decimal(element["expected_goals"])),
         "xa": (total.xa, Decimal(element["expected_assists"])),
         "saves": (total.saves, element["saves"]),
+        "starts": (total.starts, element["starts"]),
+        "tackles": (total.tackles, element["tackles"]),
+        "cbi": (total.cbi, element["clearances_blocks_interceptions"]),
+        "recoveries": (total.recoveries, element["recoveries"]),
+        "goals_conceded": (total.goals_conceded, element["goals_conceded"]),
+        "clean_sheets": (total.clean_sheets, element["clean_sheets"]),
+        "penalties_saved": (total.penalties_saved, element["penalties_saved"]),
     }
     return [
         f"{element['web_name']} ({element['code']}) {name}: rows {got} != fpl {want}"
@@ -325,6 +339,13 @@ def load(
                     "xa": t.xa,
                     "xg_conceded": t.xg_conceded,
                     "saves": t.saves,
+                    "starts": t.starts,
+                    "tackles": t.tackles,
+                    "cbi": t.cbi,
+                    "recoveries": t.recoveries,
+                    "goals_conceded": t.goals_conceded,
+                    "clean_sheets": t.clean_sheets,
+                    "penalties_saved": t.penalties_saved,
                     "form": form if r.is_current_club else None,
                     "source": SOURCE,
                 }

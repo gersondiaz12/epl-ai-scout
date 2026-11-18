@@ -3,7 +3,7 @@ model or LLM is involved, and the same totals always give the same output.
 """
 
 from collections.abc import Callable, Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from decimal import Decimal
 
 from app.models import Position
@@ -22,17 +22,20 @@ class Totals:
     xa: Decimal = Decimal(0)
     xg_conceded: Decimal = Decimal(0)
     saves: int = 0
+    # Defensive and goalkeeping counts, summed from match history at ingest.
+    # Not yet read back from stored rows (row_totals), so on read they stay 0;
+    # don't compute rates from them until row_totals maps them.
+    starts: int = 0
+    tackles: int = 0
+    cbi: int = 0  # clearances + blocks + interceptions
+    recoveries: int = 0
+    goals_conceded: int = 0
+    clean_sheets: int = 0
+    penalties_saved: int = 0
 
     def __add__(self, other: "Totals") -> "Totals":
         return Totals(
-            appearances=self.appearances + other.appearances,
-            minutes=self.minutes + other.minutes,
-            goals=self.goals + other.goals,
-            assists=self.assists + other.assists,
-            xg=self.xg + other.xg,
-            xa=self.xa + other.xa,
-            xg_conceded=self.xg_conceded + other.xg_conceded,
-            saves=self.saves + other.saves,
+            **{f.name: getattr(self, f.name) + getattr(other, f.name) for f in fields(self)}
         )
 
 

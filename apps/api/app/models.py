@@ -52,8 +52,10 @@ class Season(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     label: Mapped[str] = mapped_column(String(7), unique=True)  # "2026-27"
-    start_date: Mapped[date] = mapped_column(Date)
-    end_date: Mapped[date] = mapped_column(Date)
+    # Null for past seasons loaded from FPL's history, which gives only the
+    # label ("2024/25"); dates are never guessed.
+    start_date: Mapped[date | None] = mapped_column(Date)
+    end_date: Mapped[date | None] = mapped_column(Date)
     is_current: Mapped[bool] = mapped_column(default=False, server_default=text("false"))
 
     __table_args__ = (
@@ -151,6 +153,13 @@ class PlayerSourceId(Base):
     )
 
 
+# Nullable counts pass while null (SQL treats the check as unknown, not false).
+DEFENSIVE_NON_NEGATIVE = (
+    "starts >= 0 AND tackles >= 0 AND cbi >= 0 AND recoveries >= 0 "
+    "AND goals_conceded >= 0 AND clean_sheets >= 0 AND penalties_saved >= 0"
+)
+
+
 class PlayerSeasonStats(Base):
     """League totals for one player at one club in one season.
 
@@ -177,6 +186,15 @@ class PlayerSeasonStats(Base):
     xa: Mapped[Decimal] = mapped_column(Numeric(6, 2))
     xg_conceded: Mapped[Decimal] = mapped_column(Numeric(6, 2))
     saves: Mapped[int] = mapped_column(Integer)
+    # Defensive and goalkeeping counts. Nullable: rows loaded before these were
+    # added stay null until the next ingest fills them.
+    starts: Mapped[int | None] = mapped_column(Integer)
+    tackles: Mapped[int | None] = mapped_column(Integer)
+    cbi: Mapped[int | None] = mapped_column(Integer)  # clearances + blocks + interceptions
+    recoveries: Mapped[int | None] = mapped_column(Integer)
+    goals_conceded: Mapped[int | None] = mapped_column(Integer)  # while on the pitch
+    clean_sheets: Mapped[int | None] = mapped_column(Integer)
+    penalties_saved: Mapped[int | None] = mapped_column(Integer)
     # FPL's form: average FPL points per match over the last 30 days, as of
     # ingested_at. A snapshot, not a total, and it belongs to the player, so it
     # is set on the current-club row only (null on former-club rows). Can be
@@ -205,5 +223,57 @@ class PlayerSeasonStats(Base):
             "AND saves >= 0 AND xg >= 0 AND xa >= 0 AND xg_conceded >= 0",
             name="non_negative",
         ),
+        CheckConstraint(DEFENSIVE_NON_NEGATIVE, name="defensive_non_negative"),
         CheckConstraint("minutes <= appearances * 120", name="minutes_fit_appearances"),
+    )
+
+
+class PlayerSeasonTotals(Base):
+    """A player's season totals as a source reports them, with no club split.
+
+    For past seasons, where the source gives one total per player and season
+    (FPL's history) rather than match-level data. A field the source didn't
+    track that season is null, never 0. The current season lives in
+    player_season_stats, split by club.
+    """
+
+    __tablename__ = "player_season_totals"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    player_id: Mapped[int] = mapped_column(ForeignKey("players.id", ondelete="CASCADE"))
+    season_id: Mapped[int] = mapped_column(ForeignKey("seasons.id", ondelete="CASCADE"))
+    source: Mapped[str] = mapped_column(String(32))
+
+    minutes: Mapped[int] = mapped_column(Integer)
+    starts: Mapped[int | None] = mapped_column(Integer)
+    goals: Mapped[int | None] = mapped_column(Integer)
+    assists: Mapped[int | None] = mapped_column(Integer)
+    xg: Mapped[Decimal | None] = mapped_column(Numeric(6, 2))
+    xa: Mapped[Decimal | None] = mapped_column(Numeric(6, 2))
+    xg_conceded: Mapped[Decimal | None] = mapped_column(Numeric(6, 2))
+    saves: Mapped[int | None] = mapped_column(Integer)
+    tackles: Mapped[int | None] = mapped_column(Integer)
+    cbi: Mapped[int | None] = mapped_column(Integer)
+    recoveries: Mapped[int | None] = mapped_column(Integer)
+    goals_conceded: Mapped[int | None] = mapped_column(Integer)
+    clean_sheets: Mapped[int | None] = mapped_column(Integer)
+    penalties_saved: Mapped[int | None] = mapped_column(Integer)
+
+    ingested_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    player: Mapped[Player] = relationship()
+    season: Mapped[Season] = relationship()
+
+    __table_args__ = (
+        UniqueConstraint(
+            "player_id", "season_id", "source", name="uq_player_season_totals_player_season_source"
+        ),
+        Index("ix_player_season_totals_season", "season_id"),
+        CheckConstraint(
+            "minutes >= 0 AND goals >= 0 AND assists >= 0 AND saves >= 0 "
+            "AND xg >= 0 AND xa >= 0 AND xg_conceded >= 0 AND " + DEFENSIVE_NON_NEGATIVE,
+            name="non_negative",
+        ),
     )

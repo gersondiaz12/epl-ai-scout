@@ -31,6 +31,8 @@ EPL AI Scout is a Premier League scouting platform: `apps/web` (Next.js) and `ap
 - **Source ids:** players and clubs carry external ids as `(source, external_id)` rows, one per source. Store only ids that are stable across seasons (FPL's `code`, never its per-season `id`). A new source adds rows, not columns.
 - Store totals, not rates. Per-90 values and percentiles are computed on read. The exception is a source's own snapshot figure that can't be rebuilt from totals, such as FPL `form` (`player_season_stats.form`): store it as given, on the current-club row only, and say when it was taken (`ingested_at`). Rankings built on it (`GET /in-form`) are ordered in the API, never in the web app.
 - The ingest rolls back unless every player's rows match the source's season totals.
+- **FPL data is used with the Premier League's written permission** (confirmed by the user on 2026-11-17; keep the letter with the project records). FPL's own terms (2026/27 T&Cs, clause 28) otherwise forbid automated extraction. Add any conditions of that permission here as rules, and don't add another source without checking its terms first.
+- **Past seasons** live in `player_season_totals` (one row per player, season and source, no club split), loaded by `app.ingest.fpl_history` from FPL's `history_past`. Past seasons have no dates (FPL gives only the label) and are never current. A field FPL didn't track that season (every player 0, for fields added later such as tackles, CBI and recoveries before 2025/26) is stored as null, never 0. FPL's history covers only players still in the game.
 - apps/web reads data only through `lib/api.ts`, inside `<Suspense>` after `await connection()`, so `next build` never needs the API. Keep `lib/types.ts` in step with `app/schemas.py`.
 
 ## Working in the repo
@@ -38,7 +40,7 @@ EPL AI Scout is a Premier League scouting platform: `apps/web` (Next.js) and `ap
 - Install JS dependencies from the repo root (`npm install`). `apps/web` is an npm workspace with the lockfile at the root.
 - Manage Python dependencies with uv inside `apps/api` (`uv add`, `uv sync`, `uv run ...`), not pip.
 - Type-check the web app with `npx tsc --noEmit -p apps/web` (there's no script for it).
-- Local data: `npm run db:up`, `npm run api:migrate`, `npm run api:ingest`. API checks: `npm run api:test` (uses the `epl_scout_test` database) and `npm run api:lint`.
+- Local data: `npm run db:up`, `npm run api:migrate`, `npm run api:ingest`, then optionally `npm run api:ingest:history`. API checks: `npm run api:test` (uses the `epl_scout_test` database) and `npm run api:lint`.
 
 ## Gotchas
 
