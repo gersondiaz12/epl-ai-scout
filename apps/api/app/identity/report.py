@@ -92,7 +92,7 @@ def main() -> None:
         r = report(session)
     for d in r["datasets"]:
         print(f"\n{d['source']} / {d['dataset']}  (run {d['run']}, {d['at']})")
-        if d["records_in_scope"]:
+        if d["records_in_scope"] and d["source_records_not_ours"] is not None:
             print(
                 "  in-scope records linked:",
                 pct(
