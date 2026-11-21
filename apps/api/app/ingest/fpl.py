@@ -29,6 +29,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from app.db import SessionLocal
+from app.identity.matcher import record_exact_run
 from app.ingest.club_reference import CLUB_REFERENCE, PROMOTED
 from app.metrics import Totals, sum_totals
 from app.models import (
@@ -298,11 +299,15 @@ def load(
         int(sid.external_id): sid.player
         for sid in session.scalars(select(PlayerSourceId).where(PlayerSourceId.source == SOURCE))
     }
+    new_players = 0
     for e in bootstrap["elements"]:
         player = player_by_code.get(e["code"])
         if player is None:
+            new_players += 1
             player = Player()
-            player.source_ids.append(PlayerSourceId(source=SOURCE, external_id=str(e["code"])))
+            player.source_ids.append(
+                PlayerSourceId(source=SOURCE, external_id=str(e["code"]), method="exact_key")
+            )
             session.add(player)
             player_by_code[e["code"]] = player
         player.name = player_name(e)
@@ -389,6 +394,19 @@ def load(
     if stale:
         session.execute(delete(PlayerSeasonStats).where(PlayerSeasonStats.id.in_(stale)))
     session.flush()
+    # FPL is the roster: every element is a player of ours by its stable code.
+    record_exact_run(
+        session,
+        source=SOURCE,
+        dataset="fpl/bootstrap-static",
+        counts={
+            "records": len(bootstrap["elements"]),
+            "records_in_scope": len(bootstrap["elements"]),
+            "linked": len(bootstrap["elements"]),
+            "linked_new": new_players,
+            "new_by_method": {"exact_key": new_players} if new_players else {},
+        },
+    )
     return {
         "clubs": len(bootstrap["teams"]),
         "players": len(bootstrap["elements"]),

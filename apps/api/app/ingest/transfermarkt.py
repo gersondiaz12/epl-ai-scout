@@ -12,9 +12,10 @@ Steps:
 1. Download `players` and `player_valuations` (gzipped CSV) into
    data/raw/transfermarkt/<build date>/, untouched, with a manifest of SHA-256s,
    ETags and the upstream commit. The snapshot version is derived from the hashes.
-2. Link Transfermarkt players to ours (the Premier League players we hold) by
-   birth date plus a shared name word, accent-insensitive. Links are stored in
-   player_source_ids and kept on later runs.
+2. Link Transfermarkt players to ours (the Premier League players we hold)
+   with the identity matcher (app.identity): manual decisions, stored links,
+   rules, then a fuzzy name score. Links, the unmatched queue and the run are
+   stored; links are kept on later runs.
 3. Upsert each linked player's full valuation history and contract expiry.
    A row is only rewritten when a value differs, so re-running the same
    snapshot changes nothing.
@@ -29,11 +30,9 @@ import hashlib
 import json
 import logging
 import time
-from collections import Counter, defaultdict
 from collections.abc import Iterator
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import UTC, date, datetime
-from difflib import SequenceMatcher
 from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Any
@@ -44,13 +43,17 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from app.db import SessionLocal
-from app.models import Player, PlayerContract, PlayerMarketValue, PlayerSourceId, SourceSnapshot
+from app.identity.clubs import club_map
+from app.identity.matcher import resolve
+from app.identity.stages import Person
+from app.models import PlayerContract, PlayerMarketValue, SourceSnapshot
 from app.text import normalize
 
 log = logging.getLogger("ingest.transfermarkt")
 
 SOURCE = "transfermarkt"
 DATASET = "dcaribou/transfermarkt-datasets"
+LIVE_DATASET = "felipeall/transfermarkt-api"  # app.ingest.transfermarkt_api
 BASE_URL = "https://pub-e682421888d945d684bcae8890b0ec20.r2.dev/data/"
 COMMIT_URL = f"https://api.github.com/repos/{DATASET}/commits/master"
 FILES = ("players", "player_valuations")
@@ -158,32 +161,6 @@ def parse_date(text: str | None) -> date | None:
     return date.fromisoformat(text[:10])
 
 
-def name_words(*names: str | None) -> set[str]:
-    """Normalised words of 3+ letters, so particles like "de" or "da" can't link two people."""
-    return {w for n in names if n for w in normalize(n).split() if len(w) >= 3}
-
-
-SIMILAR_WORD_RATIO = 0.8  # Yarmoliuk/Yarmolyuk 0.89, Savio/Savinho 0.83
-
-
-def similar_words(a: set[str], b: set[str]) -> bool:
-    """Any pair of 4+ letter words at least SIMILAR_WORD_RATIO alike."""
-    return any(
-        SequenceMatcher(None, x, y).ratio() >= SIMILAR_WORD_RATIO
-        for x in a
-        for y in b
-        if len(x) >= 4 and len(y) >= 4
-    )
-
-
-@dataclass(frozen=True)
-class Ours:
-    id: int
-    name: str
-    display_name: str
-    birth_date: date | None
-
-
 @dataclass(frozen=True)
 class TmPlayer:
     tm_id: str
@@ -195,6 +172,7 @@ class TmPlayer:
     competition_id: str
     club_name: str
     contract_expires: date | None
+    club_id: str | None = None
 
 
 def parse_players(rows: Iterator[dict[str, str]]) -> tuple[list[TmPlayer], list[str]]:
@@ -212,6 +190,7 @@ def parse_players(rows: Iterator[dict[str, str]]) -> tuple[list[TmPlayer], list[
                     competition_id=row.get("current_club_domestic_competition_id") or "",
                     club_name=row.get("current_club_name") or "",
                     contract_expires=parse_date(row.get("contract_expiration_date")),
+                    club_id=(row.get("current_club_id") or "").strip() or None,
                 )
             )
         except (KeyError, ValueError) as exc:
@@ -222,90 +201,21 @@ def parse_players(rows: Iterator[dict[str, str]]) -> tuple[list[TmPlayer], list[
 # ---------- Linking ----------
 
 
-@dataclass
-class Matches:
-    links: dict[int, str] = field(default_factory=dict)  # our player id -> transfermarkt id
-    methods: Counter = field(default_factory=Counter)
-    unlinked: dict[str, list[str]] = field(default_factory=lambda: defaultdict(list))
-
-
-def match_players(ours: list[Ours], tm: list[TmPlayer]) -> Matches:
-    """Link each of our players to at most one Transfermarkt player.
-
-    With a birth date: candidates share the date and at least one name word
-    (3+ letters); the one sharing the most words wins, and a tie is ambiguous.
-    If none shares a word, one candidate with a similar word (spelling
-    variant, e.g. Yarmoliuk / Yarmolyuk) links; more than one is ambiguous.
-    Without one: the normalised full name must equal exactly one recently
-    active Transfermarkt player's name. A Transfermarkt player claimed by two
-    of ours links neither.
-    """
-    by_dob: dict[date, list[TmPlayer]] = defaultdict(list)
-    for p in tm:
-        if p.birth_date:
-            by_dob[p.birth_date].append(p)
-    latest = max((p.last_season for p in tm if p.last_season is not None), default=0)
-    by_name: dict[str, list[TmPlayer]] = defaultdict(list)
-    for p in tm:
-        if p.last_season is not None and p.last_season >= latest - 1:
-            by_name[normalize(p.name)].append(p)
-
-    m = Matches()
-    for o in ours:
-        label = f"{o.name} ({o.id})"
-        if o.birth_date is None:
-            found = {
-                p.tm_id: p
-                for n in {normalize(o.name), normalize(o.display_name)}
-                for p in by_name.get(n, [])
-            }
-            if len(found) == 1:
-                m.links[o.id] = next(iter(found))
-                m.methods["name_only"] += 1
-            else:
-                m.unlinked["no_birth_date" if not found else "ambiguous"].append(label)
-            continue
-        candidates = by_dob.get(o.birth_date, [])
-        if not candidates:
-            m.unlinked["no_birth_date_match"].append(label)
-            continue
-        ours_words = name_words(o.name, o.display_name)
-        scored = [
-            (len(ours_words & name_words(p.name, p.first_name, p.last_name)), p) for p in candidates
-        ]
-        scored = [(score, p) for score, p in scored if score > 0]
-        if not scored:
-            # Spelling variants of the same name (transliteration, nicknames):
-            # only between players who already share a birth date.
-            similar = [
-                p
-                for p in candidates
-                if similar_words(ours_words, name_words(p.name, p.first_name, p.last_name))
-            ]
-            if len(similar) == 1:
-                m.links[o.id] = similar[0].tm_id
-                m.methods["birth_date_and_similar_name"] += 1
-            elif similar:
-                m.unlinked["ambiguous"].append(label)
-            else:
-                # The players sharing the birth date are other people: ours
-                # isn't in the dataset (it covers mainly top-division leagues).
-                m.unlinked["not_in_dataset"].append(label)
-            continue
-        best = max(score for score, _ in scored)
-        top = [p for score, p in scored if score == best]
-        if len(top) > 1:
-            m.unlinked["ambiguous"].append(label)
-            continue
-        m.links[o.id] = top[0].tm_id
-        m.methods["birth_date_and_name"] += 1
-
-    claimed = Counter(m.links.values())
-    for our_id, tm_id in list(m.links.items()):
-        if claimed[tm_id] > 1:
-            del m.links[our_id]
-            m.unlinked["same_transfermarkt_player"].append(str(our_id))
-    return m
+def to_person(p: TmPlayer, clubs: dict[str, int]) -> Person:
+    """A Transfermarkt player for the matcher: its name, and its first + last name
+    when they differ ("Alisson" / "Alisson Becker"); its club when we know it."""
+    names = [p.name]
+    full = f"{p.first_name} {p.last_name}".strip()
+    if full and normalize(full) != normalize(p.name):
+        names.append(full)
+    club = clubs.get(p.club_id or "")
+    return Person(
+        p.tm_id,
+        tuple(names),
+        p.birth_date,
+        frozenset({club}) if club else frozenset(),
+        p.club_name or None,
+    )
 
 
 # ---------- Loading ----------
@@ -338,28 +248,26 @@ def load_transfermarkt(session: Session, snap_dir: Path) -> dict[str, Any]:
     manifest = json.loads((snap_dir / "manifest.json").read_text())
     now = datetime.now(UTC)
 
-    # Our players: every Premier League player we hold.
-    ours = [
-        Ours(p.id, p.name, p.display_name, p.birth_date) for p in session.scalars(select(Player))
-    ]
     tm_players, bad_players = parse_players(read_csv_gz(snap_dir / "players.csv.gz"))
     tm_by_id = {p.tm_id: p for p in tm_players}
-
-    # Existing links win: they are stable ids and may have been checked by hand.
-    existing = {
-        sid.player_id: sid.external_id
-        for sid in session.scalars(select(PlayerSourceId).where(PlayerSourceId.source == SOURCE))
+    # Transfermarkt's latest-season Premier League players: counted when none of
+    # ours matches, not queued. The frozen snapshot predates 2026/27, so many
+    # have left; the live squads decide who should be ours.
+    latest = max((p.last_season for p in tm_players if p.last_season is not None), default=0)
+    pl_latest = {
+        p.tm_id
+        for p in tm_players
+        if p.competition_id == PREMIER_LEAGUE and p.last_season == latest
     }
-    matches = match_players([o for o in ours if o.id not in existing], tm_players)
-    taken = set(existing.values())
-    new_links = {pid: tid for pid, tid in matches.links.items() if tid not in taken}
-    for pid in set(matches.links) - set(new_links):
-        matches.unlinked["already_linked_to_another_player"].append(str(pid))
-    for pid, tid in new_links.items():
-        session.add(PlayerSourceId(player_id=pid, source=SOURCE, external_id=tid))
-    links = {**existing, **new_links}
+    clubs = club_map(session, SOURCE)  # filled by the live job; club evidence only once known
+    matched = resolve(
+        session,
+        source=SOURCE,
+        dataset=DATASET,
+        records=[to_person(p, clubs) for p in tm_players],
+    )
+    links = matched.links
     player_by_tm = {tid: pid for pid, tid in links.items()}
-    session.flush()
 
     # Valuations: stream the file, keep linked players, count the rest.
     values, bad_values = [], []
@@ -409,7 +317,20 @@ def load_transfermarkt(session: Session, snap_dir: Path) -> dict[str, Any]:
         )
         session.add(snapshot)
         session.flush()
+    matched.run.snapshot_id = snapshot.id
 
+    # The live API (app.ingest.transfermarkt_api) is newer than this frozen
+    # snapshot: a value it wrote for a date is never overwritten from here.
+    live = {
+        (pid, day)
+        for pid, day in session.execute(
+            select(PlayerMarketValue.player_id, PlayerMarketValue.valued_on)
+            .join(SourceSnapshot, SourceSnapshot.id == PlayerMarketValue.snapshot_id)
+            .where(PlayerMarketValue.source == SOURCE, SourceSnapshot.dataset == LIVE_DATASET)
+        )
+    }
+    kept_live = sum(1 for v in values if (v["player_id"], v["valued_on"]) in live)
+    values = [v for v in values if (v["player_id"], v["valued_on"]) not in live]
     for v in values:
         v.update(snapshot_id=snapshot.id, ingested_at=now)
     values_written = (
@@ -425,10 +346,11 @@ def load_transfermarkt(session: Session, snap_dir: Path) -> dict[str, Any]:
     )
 
     contracts, no_contract = [], []
+    missing_from_snapshot = 0
     for pid, tid in links.items():
         p = tm_by_id.get(tid)
         if p is None:
-            matches.unlinked["linked_player_missing_from_snapshot"].append(str(pid))
+            missing_from_snapshot += 1
             continue
         if p.contract_expires is None:
             no_contract.append(p.name)
@@ -456,23 +378,7 @@ def load_transfermarkt(session: Session, snap_dir: Path) -> dict[str, Any]:
     )
     session.flush()
 
-    # Transfermarkt's 2025/26 Premier League players that none of ours matched
-    # (left the league, not in FPL, or a matching miss): reported, not loaded.
-    latest = max((p.last_season for p in tm_players if p.last_season is not None), default=0)
-    linked_tm = set(links.values())
-    pl_not_linked = [
-        p
-        for p in tm_players
-        if p.competition_id == PREMIER_LEAGUE
-        and p.last_season == latest
-        and p.tm_id not in linked_tm
-    ]
     valued = {v["player_id"] for v in values}
-
-    unlinked = {reason: len(items) for reason, items in matches.unlinked.items() if items}
-    for reason, items in matches.unlinked.items():
-        if items:
-            log.warning("unlinked (%s): %d, e.g. %s", reason, len(items), ", ".join(items[:5]))
     if bad_players or bad_values:
         log.warning(
             "unreadable rows: %d players, %d valuations, e.g. %s",
@@ -480,34 +386,29 @@ def load_transfermarkt(session: Session, snap_dir: Path) -> dict[str, Any]:
             len(bad_values),
             "; ".join((bad_players + bad_values)[:5]),
         )
-    if pl_not_linked:
-        log.info(
-            "%d Transfermarkt %d/%02d Premier League players match none of ours, e.g. %s",
-            len(pl_not_linked),
-            latest,
-            (latest + 1) % 100,
-            ", ".join(p.name for p in pl_not_linked[:8]),
-        )
+    counts = matched.counts
 
     return {
         "snapshot_version": manifest["version"][:12],
         "upstream_commit": (manifest.get("upstream_commit") or "unknown")[:12],
         "data_through": data_through.isoformat() if data_through else None,
-        "our_players": len(ours),
+        "our_players": counts["our_players"],
         "linked": len(links),
-        "linked_new": len(new_links),
-        "link_methods": dict(matches.methods),
-        "unlinked": unlinked,
+        "linked_new": len(matched.new_links),
+        "link_methods": counts["new_by_method"],
+        "unlinked": counts["unmatched_our_players"],
+        "linked_missing_from_snapshot": missing_from_snapshot,
         "unreadable_players": len(bad_players),
         "unreadable_valuations": len(bad_values),
         "valuations_for_our_players": len(values),
         "valuations_written": values_written,
+        "valuations_kept_from_live_api": kept_live,
         "valuations_other_players": other_rows,
         "linked_without_valuations": len(set(links) - valued),
         "contracts_for_our_players": len(contracts),
         "contracts_written": contracts_written,
         "linked_without_contract_date": len(no_contract),
-        "tm_pl_players_not_ours": len(pl_not_linked),
+        "tm_pl_players_not_ours": len(pl_latest - set(links.values())),
     }
 
 

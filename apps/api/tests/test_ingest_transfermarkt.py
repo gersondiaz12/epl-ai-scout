@@ -7,17 +7,22 @@ from sqlalchemy import func, select
 
 from app.ingest.fpl import load
 from app.ingest.transfermarkt import (
-    Ours,
-    TmPlayer,
     download,
     load_transfermarkt,
-    match_players,
-    name_words,
     parse_date,
-    similar_words,
     snapshot_version,
 )
-from app.models import Player, PlayerContract, PlayerMarketValue, PlayerSourceId, SourceSnapshot
+from app.models import (
+    Club,
+    ClubSourceId,
+    MatchRun,
+    Player,
+    PlayerContract,
+    PlayerMarketValue,
+    PlayerSourceId,
+    SourceSnapshot,
+    UnmatchedRecord,
+)
 from tests import fpl_payload as fpl
 from tests import transfermarkt_payload as tmp
 
@@ -32,81 +37,11 @@ def test_parse_date():
         parse_date("30/06/2027")
 
 
-def test_name_words_ignore_accents_and_short_particles():
-    assert name_words("Martin Ødegaard", "Ødegaard") == {"martin", "odegaard"}
-    assert "magalhaes" in name_words("Gabriel dos Santos Magalhães")
-    assert "da" not in name_words("Joao da Silva")
-
-
-def test_similar_words():
-    assert similar_words({"yarmoliuk"}, {"yarmolyuk"})
-    assert similar_words({"savio"}, {"savinho"})
-    assert not similar_words({"kitching"}, {"kreida"})
-    assert not similar_words({"ali"}, {"aly"})  # under 4 letters never counts
-
-
 def test_snapshot_version_is_stable_and_order_free():
     a = {"players": {"sha256": "aa"}, "player_valuations": {"sha256": "bb"}}
     b = {"player_valuations": {"sha256": "bb"}, "players": {"sha256": "aa"}}
     assert snapshot_version(a) == snapshot_version(b)
     assert snapshot_version(a) != snapshot_version({**a, "players": {"sha256": "cc"}})
-
-
-# ---------- Matching ----------
-
-
-def tm(tid, name, dob, season=2025):
-    first, _, last = name.partition(" ")
-    return TmPlayer(tid, name, first, last, dob, season, "GB1", "Club", None)
-
-
-D1, D2 = date(2000, 1, 1), date(2001, 2, 2)
-
-
-def test_match_rules():
-    ours = [
-        Ours(1, "Martin Odegaard", "Odegaard", D1),  # exact word
-        Ours(2, "Yehor Yarmoliuk", "Yarmoliuk", D2),  # spelling variant only
-        Ours(3, "Liam Kitching", "Kitching", date(1999, 9, 25)),  # date shared with someone else
-        Ours(4, "Nobody Here", "Here", date(1990, 1, 1)),  # no one born that day
-        Ours(5, "Keeper Name", "Name", None),  # name only
-        Ours(6, "Ghost Player", "Ghost", None),  # no birth date, no name match
-    ]
-    candidates = [
-        tm("a", "Martin Ødegaard", D1),
-        tm("b", "Someone Else", D1),
-        tm("c", "Yegor Yarmolyuk", D2),
-        tm("d", "Keeper Name", date(1995, 5, 5)),
-        tm("e", "Vladislav Kreida", date(1999, 9, 25)),
-    ]
-    m = match_players(ours, candidates)
-    assert m.links == {1: "a", 2: "c", 5: "d"}
-    assert dict(m.methods) == {
-        "birth_date_and_name": 1,
-        "birth_date_and_similar_name": 1,
-        "name_only": 1,
-    }
-    assert {r: len(v) for r, v in m.unlinked.items() if v} == {
-        "not_in_dataset": 1,
-        "no_birth_date_match": 1,
-        "no_birth_date": 1,
-    }
-
-
-def test_match_refuses_ties_and_shared_targets():
-    ours = [Ours(1, "Alex Smith", "Smith", D1)]
-    m = match_players(ours, [tm("a", "Alex Brown", D1), tm("b", "Alex Green", D1)])
-    assert m.links == {} and len(m.unlinked["ambiguous"]) == 1
-    # One Transfermarkt player claimed by two of ours links neither.
-    twins = [Ours(1, "Chris Wood", "Wood", D1), Ours(2, "Chris Wood", "Wood", D1)]
-    m = match_players(twins, [tm("a", "Chris Wood", D1)])
-    assert m.links == {} and len(m.unlinked["same_transfermarkt_player"]) == 2
-
-
-def test_name_only_requires_a_recently_active_player():
-    ours = [Ours(1, "Old Legend", "Legend", None)]
-    m = match_players(ours, [tm("a", "Old Legend", D1, season=2010), tm("x", "X Y", D2)])
-    assert m.links == {} and len(m.unlinked["no_birth_date"]) == 1
 
 
 # ---------- Loading ----------
@@ -132,20 +67,24 @@ def test_load_links_players_and_reports_everything_not_loaded(session_factory, o
         "upstream_commit": "e44f186d6f06",
         "data_through": "2026-06-12",
         "our_players": 4,
-        "linked": 3,
-        "linked_new": 3,
-        "link_methods": {"birth_date_and_name": 2, "name_only": 1},
-        "unlinked": {"not_in_dataset": 1},  # Forward
+        "linked": 2,
+        "linked_new": 2,
+        "link_methods": {"r1_same_words": 2},
+        # Keeper has no birth date and no club evidence yet; Forward shares a
+        # birth date only with someone of another name.
+        "unlinked": {"no_birth_date": 1, "no_name_match": 1},
+        "linked_missing_from_snapshot": 0,
         "unreadable_players": 0,
         "unreadable_valuations": 1,
         "valuations_for_our_players": 3,
         "valuations_written": 3,
+        "valuations_kept_from_live_api": 0,
         "valuations_other_players": 1,
-        "linked_without_valuations": 1,  # Keeper
-        "contracts_for_our_players": 2,
-        "contracts_written": 2,
+        "linked_without_valuations": 0,
+        "contracts_for_our_players": 1,
+        "contracts_written": 1,
         "linked_without_contract_date": 1,  # Mover
-        "tm_pl_players_not_ours": 1,  # Other Squad (Old Legend retired long ago)
+        "tm_pl_players_not_ours": 2,  # Keeper Test, Other Squad (Old Legend retired long ago)
     }
     with session_factory() as session:
         links = {
@@ -154,7 +93,7 @@ def test_load_links_players_and_reports_everything_not_loaded(session_factory, o
                 select(PlayerSourceId).where(PlayerSourceId.source == "transfermarkt")
             )
         }
-        assert links == {ours["Striker"]: "101", ours["Mover"]: "102", ours["Keeper"]: "103"}
+        assert links == {ours["Striker"]: "101", ours["Mover"]: "102"}
         values = session.scalars(
             select(PlayerMarketValue).order_by(PlayerMarketValue.valued_on)
         ).all()
@@ -164,10 +103,17 @@ def test_load_links_players_and_reports_everything_not_loaded(session_factory, o
             (ours["Striker"], date(2025, 12, 1), 60_000_000, "GB1"),
         ]
         contracts = {c.player_id: c.expires_on for c in session.scalars(select(PlayerContract))}
-        assert contracts == {
-            ours["Striker"]: date(2028, 6, 30),
-            ours["Keeper"]: date(2027, 6, 30),
+        assert contracts == {ours["Striker"]: date(2028, 6, 30)}
+        queued = {(u.side, u.reason, u.name) for u in session.scalars(select(UnmatchedRecord))}
+        assert queued == {
+            ("our_player", "no_birth_date", "Keeper Test"),
+            ("our_player", "no_name_match", "Forward Test"),
         }
+        (match_run,) = session.scalars(
+            select(MatchRun).where(MatchRun.source == "transfermarkt")
+        ).all()
+        assert match_run.dataset == "dcaribou/transfermarkt-datasets"
+        assert match_run.snapshot_id is not None
 
 
 def test_snapshot_version_is_recorded_and_cited(session_factory, ours, tmp_path):
@@ -198,7 +144,7 @@ def test_rerunning_the_same_snapshot_changes_nothing(session_factory, ours, tmp_
     before = market_rows(session_factory)
     summary = run(session_factory, folder)
     assert (summary["valuations_written"], summary["contracts_written"]) == (0, 0)
-    assert summary["linked_new"] == 0 and summary["linked"] == 3
+    assert summary["linked_new"] == 0 and summary["linked"] == 2
     assert market_rows(session_factory) == before  # not even ingested_at moves
     with session_factory() as session:
         assert session.scalar(select(func.count()).select_from(SourceSnapshot)) == 1
@@ -228,8 +174,17 @@ def test_existing_links_win(session_factory, ours, tmp_path):
             PlayerSourceId(player_id=ours["Forward"], source="transfermarkt", external_id="104")
         )
     summary = run(session_factory, tmp.write_snapshot(tmp_path / "snap"))
-    assert summary["linked"] == 4 and summary["linked_new"] == 3
-    assert "not_in_dataset" not in summary["unlinked"]
+    assert summary["linked"] == 3 and summary["linked_new"] == 2
+    assert "no_name_match" not in summary["unlinked"]
+
+
+def test_club_evidence_links_a_player_without_a_birth_date(session_factory, ours, tmp_path):
+    with session_factory() as session, session.begin():
+        coventry = session.scalar(select(Club).where(Club.short_name == "COV"))
+        session.add(ClubSourceId(club_id=coventry.id, source="transfermarkt", external_id="990"))
+    summary = run(session_factory, tmp.write_snapshot(tmp_path / "snap"))
+    assert summary["link_methods"] == {"r1_same_words": 2, "r4_club": 1}
+    assert summary["contracts_written"] == 2  # Keeper's contract too
 
 
 # ---------- Download (mock transport, never the live source) ----------

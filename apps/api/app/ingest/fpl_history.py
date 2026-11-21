@@ -28,6 +28,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from app.db import SessionLocal
+from app.identity.matcher import record_exact_run
 from app.ingest.fpl import CACHE_ROOT, SOURCE, FplClient
 from app.models import PlayerSeasonTotals, PlayerSourceId, Season
 
@@ -204,6 +205,17 @@ def load_history(session: Session, summaries: list[Json], count: int = 3) -> dic
     for season, cols in parsed.untracked.items():
         log.info("%s: FPL didn't track %s that season; stored as null", season, ", ".join(cols))
 
+    record_exact_run(
+        session,
+        source=SOURCE,
+        dataset="fpl/element-summary history_past",
+        counts={
+            "records": len(values) + len(unlinked),
+            "records_in_scope": len(values) + len(unlinked),
+            "linked": len(values),
+            "unmatched_records": {"code_not_ours": len(unlinked)} if unlinked else {},
+        },
+    )
     return {
         "seasons": seasons,
         "rows_by_season": {

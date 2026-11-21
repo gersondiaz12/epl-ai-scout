@@ -7,8 +7,9 @@ Striker 2000-01-15, Mover 1998-06-01, Keeper (no birth date), Forward 1995-03-03
 
 - 101 Striker Test: same birth date and name -> linked; contract 2028-06-30.
 - 102 Mover Test: linked; no contract date in the source.
-- 103 Keeper Test: ours has no birth date; unique exact name, active -> linked by name.
-- 104 Someone Else: shares Forward's birth date only -> Forward is not in the dataset.
+- 103 Keeper Test: ours has no birth date; same name, so it links only with club
+  evidence (Transfermarkt club 990 = our Coventry).
+- 104 Someone Else: shares Forward's birth date only -> no name match.
 - 105 Old Legend: last club in the Premier League, but retired (2010) -> not reported.
 - 106 Other Squad: 2025/26 Premier League player who isn't one of ours -> reported.
 """
@@ -31,10 +32,13 @@ PLAYER_COLUMNS = [
     "contract_expiration_date",
     "current_club_domestic_competition_id",
     "current_club_name",
+    "current_club_id",
 ]
 
 
-def player(pid, first, last, dob, contract="", comp="GB1", club="Arsenal FC", season="2025"):
+def player(
+    pid, first, last, dob, contract="", comp="GB1", club="Arsenal FC", season="2025", club_id="11"
+):
     return {
         "player_id": pid,
         "first_name": first,
@@ -45,13 +49,16 @@ def player(pid, first, last, dob, contract="", comp="GB1", club="Arsenal FC", se
         "contract_expiration_date": contract,
         "current_club_domestic_competition_id": comp,
         "current_club_name": club,
+        "current_club_id": club_id,
     }
 
 
 PLAYERS = [
     player("101", "Striker", "Test", "2000-01-15", "2028-06-30"),
     player("102", "Mover", "Test", "1998-06-01"),
-    player("103", "Keeper", "Test", "1990-01-01", "2027-06-30", club="Coventry City"),
+    player(
+        "103", "Keeper", "Test", "1990-01-01", "2027-06-30", club="Coventry City", club_id="990"
+    ),
     player("104", "Someone", "Else", "1995-03-03", comp="ES1", club="Real Betis"),
     player("105", "Old", "Legend", "1980-05-05", season="2010"),
     player("106", "Other", "Squad", "1999-09-09", "2029-06-30"),

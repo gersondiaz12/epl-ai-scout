@@ -21,9 +21,10 @@ Steps:
    and nothing is loaded. Every response is saved untouched under
    data/raw/transfermarkt-api/<date>/ before it is parsed; a re-run the same day
    reuses those files instead of requesting them again.
-4. Link unlinked players of ours to squad players (same rules as the bulk
-   load), then upsert the histories into player_market_values. Only a changed
-   value rewrites a row, and rows the bulk dataset loaded keep their league label.
+4. Link unlinked players of ours to squad players with the identity matcher
+   (app.identity; club evidence from club_source_ids), then upsert the
+   histories into player_market_values. Only a changed value rewrites a row,
+   and rows the bulk dataset loaded keep their league label.
 
 Every record not loaded is counted by reason and logged.
 """
@@ -49,21 +50,22 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.db import SessionLocal
+from app.identity.clubs import link_clubs
+from app.identity.matcher import resolve
+from app.identity.stages import Person
 from app.ingest.transfermarkt import (
     BATCH,
+    LIVE_DATASET,
     PREMIER_LEAGUE,
     SOURCE,
-    Ours,
-    TmPlayer,
-    match_players,
     parse_date,
     snapshot_version,
 )
-from app.models import Player, PlayerMarketValue, PlayerSourceId, Season, SourceSnapshot
+from app.models import PlayerMarketValue, PlayerSourceId, Season, SourceSnapshot
 
 log = logging.getLogger("ingest.transfermarkt_api")
 
-DATASET = "felipeall/transfermarkt-api"
+DATASET = LIVE_DATASET
 CACHE_ROOT = Path(__file__).resolve().parents[2] / "data" / "raw" / "transfermarkt-api"
 LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1"}
 DEFAULT_DELAY = 5.0
@@ -162,9 +164,9 @@ class Fetched:
     stats: dict[str, int] = field(default_factory=dict)
 
 
-def squad_players(fetched: "Fetched") -> tuple[dict[str, TmPlayer], list[str]]:
-    """Squad entries as TmPlayers, once each (a player listed twice keeps the first)."""
-    squad: dict[str, TmPlayer] = {}
+def squad_people(fetched: "Fetched", clubs: dict[str, int]) -> tuple[dict[str, Person], list[str]]:
+    """Squad entries for the matcher, once each, with our club for their squad."""
+    found: dict[str, Person] = {}
     bad: list[str] = []
     for club_id, entries in fetched.squads.items():
         for e in entries:
@@ -174,36 +176,29 @@ def squad_players(fetched: "Fetched") -> tuple[dict[str, TmPlayer], list[str]]:
             except (KeyError, ValueError) as exc:
                 bad.append(f"{club_id}: {exc!r}")
                 continue
-            name = e.get("name") or ""
-            first, _, last = name.partition(" ")
-            squad.setdefault(
+            ours = clubs.get(club_id)
+            prev = found.get(tid)
+            found[tid] = Person(
                 tid,
-                TmPlayer(
-                    tid,
-                    name,
-                    first,
-                    last,
-                    dob,
-                    int(fetched.season),
-                    PREMIER_LEAGUE,
-                    fetched.clubs[club_id],
-                    None,
-                ),
+                (e.get("name") or tid,),
+                dob,
+                (prev.club_ids if prev else frozenset()) | ({ours} if ours else set()),
+                prev.club_name if prev else fetched.clubs[club_id],
             )
-    return squad, bad
+    return found, bad
 
 
-def all_ours(session: Session) -> list[Ours]:
-    return [
-        Ours(p.id, p.name, p.display_name, p.birth_date) for p in session.scalars(select(Player))
-    ]
-
-
-def existing_links(session: Session) -> dict[int, str]:
-    return {
-        s.player_id: s.external_id
-        for s in session.scalars(select(PlayerSourceId).where(PlayerSourceId.source == SOURCE))
-    }
+def match_squads(session: Session, fetched: "Fetched", *, write: bool):
+    clubs = link_clubs(session, SOURCE, fetched.clubs, write=write)
+    squad, bad = squad_people(fetched, clubs)
+    matched = resolve(
+        session,
+        source=SOURCE,
+        dataset=DATASET,
+        records=list(squad.values()),
+        in_scope=lambda r: True,  # every current Premier League squad player should be ours
+    )
+    return matched, squad, bad
 
 
 def latest_values(session: Session) -> dict[str, int]:
@@ -254,14 +249,14 @@ def fetch(
             )
             squads[club_id] = [] if body is None else body.get("players", [])
 
-        # Linked players, plus squad players the load is about to link.
-        existing = existing_links(session)
-        squad, _ = squad_players(Fetched(folder, season, clubs, squads, {}))
-        unlinked_ours = [o for o in all_ours(session) if o.id not in existing]
-        linked = set(existing.values()) | set(
-            match_players(unlinked_ours, list(squad.values())).links.values()
-        )
+        # Linked players, plus squad players the load is about to link: a
+        # preview run of the matcher, rolled back (fetch writes nothing).
         held = latest_values(session)
+        preview, _, _ = match_squads(
+            session, Fetched(folder, season, clubs, squads, {}), write=False
+        )
+        linked = set(preview.links.values())
+        session.rollback()
         histories: dict[str, dict | None] = {}
         unchanged = 0
         for entry in (e for squad in squads.values() for e in squad):
@@ -339,19 +334,8 @@ def load_live(session: Session, fetched: Fetched) -> dict[str, Any]:
     now = datetime.now(UTC)
     current = session.scalar(select(Season).where(Season.is_current))
 
-    squad, bad_squad = squad_players(fetched)
-
-    ours = all_ours(session)
-    existing = existing_links(session)
-    matches = match_players([o for o in ours if o.id not in existing], list(squad.values()))
-    taken = set(existing.values())
-    new_links = {pid: tid for pid, tid in matches.links.items() if tid not in taken}
-    for pid in set(matches.links) - set(new_links):
-        matches.unlinked["already_linked_to_another_player"].append(str(pid))
-    for pid, tid in new_links.items():
-        session.add(PlayerSourceId(player_id=pid, source=SOURCE, external_id=tid))
-    session.flush()
-    player_by_tm = {tid: pid for pid, tid in {**existing, **new_links}.items()}
+    matched, squad, bad_squad = match_squads(session, fetched, write=True)
+    player_by_tm = {tid: pid for pid, tid in matched.links.items()}
 
     pl_club_ids = set(fetched.clubs)
     season_start = current.start_date if current else None
@@ -420,20 +404,17 @@ def load_live(session: Session, fetched: Fetched) -> dict[str, Any]:
         )
         session.add(snapshot)
         session.flush()
+    matched.run.snapshot_id = snapshot.id
     for v in values:
         v.update(snapshot_id=snapshot.id, ingested_at=now)
     written = upsert_values(session, values) if values else 0
 
     linked_tm = set(player_by_tm)
     in_squads = set(squad)
-    unlinked = {r: len(items) for r, items in matches.unlinked.items() if items}
     report = {
         "linked_not_in_pl_squads": len(linked_tm - in_squads),
-        "squad_players_not_ours": len(in_squads - linked_tm),
+        "squad_players_not_ours": matched.counts["source_records_not_ours"],
     }
-    for reason, items in matches.unlinked.items():
-        if items:
-            log.info("our players not in a current squad (%s): %d", reason, len(items))
     for reason, items in examples.items():
         log.warning("skipped %s: %d, e.g. %s", reason, len(items), "; ".join(items[:5]))
     if bad_squad:
@@ -447,9 +428,9 @@ def load_live(session: Session, fetched: Fetched) -> dict[str, Any]:
         "squad_players": len(squad),
         "unreadable_squad_entries": len(bad_squad),
         "linked": len(player_by_tm),
-        "linked_new": len(new_links),
-        "link_methods": dict(matches.methods),
-        "unlinked": unlinked,
+        "linked_new": len(matched.new_links),
+        "link_methods": matched.counts["new_by_method"],
+        "unlinked": matched.counts["unmatched_our_players"],
         **report,
         "histories_fetched": len(fetched.histories),
         "valuations_seen": len(values),

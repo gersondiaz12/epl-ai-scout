@@ -179,8 +179,9 @@ def test_first_run_links_loads_and_reports_skips(session_factory, ours, tmp_path
         "unreadable_squad_entries": 0,
         "linked": 3,
         "linked_new": 3,
-        "link_methods": {"birth_date_and_name": 2, "name_only": 1},
-        "unlinked": {"no_birth_date_match": 1},  # Forward
+        # Keeper (no birth date) links by name plus the same club.
+        "link_methods": {"r1_same_words": 2, "r4_club": 1},
+        "unlinked": {"not_in_source": 1},  # Forward: nobody in the squads shares the date
         "linked_not_in_pl_squads": 0,
         "squad_players_not_ours": 1,  # Other Squad
         "histories_fetched": 3,
@@ -249,7 +250,8 @@ def test_after_the_bulk_load_only_changed_values_are_fetched(session_factory, ou
     # Mover's squad value equals the 8m we hold: no history request.
     assert "/players/102/market_value" not in api.calls
     assert summary["histories_skipped_value_unchanged"] == 1
-    assert summary["linked_new"] == 0
+    # The bulk load had no club evidence for Keeper; the live squads give it.
+    assert summary["linked_new"] == 1 and summary["link_methods"] == {"r4_club": 1}
     # Only Striker's new October value is new; the bulk rows keep their league labels.
     assert summary["valuations_written"] == 1
     s = ours["Striker"]
@@ -317,3 +319,18 @@ def test_wrong_season_is_refused(session_factory, ours, tmp_path, monkeypatch):
     monkeypatch.setitem(COMPETITION, "seasonId", "2025")
     with pytest.raises(RuntimeError, match="season 2026"):
         run(session_factory, tmp_path, FakeApi())
+
+
+def test_the_frozen_bulk_load_never_overwrites_a_live_value(session_factory, ours, tmp_path):
+    """Real case: Elliot Stroud on 2026-06-05 is 5m in the bulk dataset and 8m
+    from the live API (revised since); alternating runs used to flip it."""
+    run(session_factory, tmp_path / "live", FakeApi())
+    revised = [dict(v) for v in bulk.VALUATIONS]
+    revised[1]["market_value_in_eur"] = "55000000"  # Striker 2025-12-01: live says 60m
+    with session_factory() as session, session.begin():
+        summary = load_transfermarkt(
+            session, bulk.write_snapshot(tmp_path / "bulk", bulk.files(valuations=revised))
+        )
+    assert summary["valuations_kept_from_live_api"] == 3  # Striker x2, Mover: all live dates
+    s = ours["Striker"]
+    assert (s, date(2025, 12, 1), 60_000_000, "Arsenal FC", None) in values(session_factory)

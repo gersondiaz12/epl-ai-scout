@@ -137,8 +137,24 @@ class ClubSourceId(Base):
     )
 
 
+# How a player_source_ids link was made (app.identity): checked in that order.
+LINK_METHODS = (
+    "exact_key",  # the source's own stable id (FPL code)
+    "manual",  # an operator decision (player_match_decisions)
+    "r1_same_words",  # same birth date, same name words in any order
+    "r2_subset",  # same birth date, one name's words within the other's, given names agree
+    "r3_alias",  # same birth date, equal after the reviewed alias table
+    "r4_club",  # no birth date on one side: same name and same club this season
+    "fuzzy",  # same birth date, word-aligned name score above the threshold
+    "legacy",  # made before methods were recorded
+)
+
+
 class PlayerSourceId(Base):
-    """An external id for a player, e.g. ('fpl', '223340'): FPL's stable element code."""
+    """An external id for a player, e.g. ('fpl', '223340'): FPL's stable element code.
+
+    `method` says how the link was made; a `manual` link is never changed by a run.
+    """
 
     __tablename__ = "player_source_ids"
 
@@ -146,12 +162,19 @@ class PlayerSourceId(Base):
     player_id: Mapped[int] = mapped_column(ForeignKey("players.id", ondelete="CASCADE"))
     source: Mapped[str] = mapped_column(String(32))
     external_id: Mapped[str] = mapped_column(String(64))
+    method: Mapped[str] = mapped_column(String(16), server_default=text("'legacy'"))
+    score: Mapped[Decimal | None] = mapped_column(Numeric(4, 3))  # fuzzy links only
+    match_run_id: Mapped[int | None] = mapped_column(ForeignKey("match_runs.id"))
+    matched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     player: Mapped[Player] = relationship(back_populates="source_ids")
 
     __table_args__ = (
         UniqueConstraint("source", "external_id", name="uq_player_source_ids_source_external_id"),
         UniqueConstraint("player_id", "source", name="uq_player_source_ids_player_id_source"),
+        CheckConstraint(
+            "method IN (" + ", ".join(f"'{m}'" for m in LINK_METHODS) + ")", name="method"
+        ),
     )
 
 
@@ -359,4 +382,109 @@ class PlayerContract(Base):
 
     __table_args__ = (
         UniqueConstraint("player_id", "source", name="uq_player_contracts_player_source"),
+    )
+
+
+class MatchRun(Base):
+    """One run of the identity matcher for a source dataset, with its settings and counts."""
+
+    __tablename__ = "match_runs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    source: Mapped[str] = mapped_column(String(32))  # "transfermarkt"
+    dataset: Mapped[str] = mapped_column(String(128))  # "felipeall/transfermarkt-api"
+    snapshot_id: Mapped[int | None] = mapped_column(ForeignKey("source_snapshots.id"))
+    matcher_version: Mapped[str] = mapped_column(String(16))
+    settings: Mapped[dict] = mapped_column(JSONB)  # threshold, margin, alias-table hash
+    counts: Mapped[dict] = mapped_column(JSONB)  # in scope, matched by method, unmatched by reason
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class UnmatchedRecord(Base):
+    """A record the matcher could not link, with its candidates and the reason.
+
+    `side` is "source_record" (a source's player with none of ours) or
+    "our_player" (one of ours with no record in that source). A row is open
+    while `last_seen_run_id` is the latest run for its (source, dataset); it is
+    kept as history after it resolves.
+    """
+
+    __tablename__ = "unmatched_records"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    source: Mapped[str] = mapped_column(String(32))
+    dataset: Mapped[str] = mapped_column(String(128))
+    # "<side>:<external_id>:<player_id>", so a missing id still makes a unique key.
+    record_key: Mapped[str] = mapped_column(String(128))
+    side: Mapped[str] = mapped_column(String(16))
+    external_id: Mapped[str | None] = mapped_column(String(64))
+    player_id: Mapped[int | None] = mapped_column(ForeignKey("players.id", ondelete="CASCADE"))
+    name: Mapped[str] = mapped_column(String(200))
+    birth_date: Mapped[date | None] = mapped_column(Date)
+    club_name: Mapped[str | None] = mapped_column(String(128))
+    reason: Mapped[str] = mapped_column(String(32))
+    candidates: Mapped[list] = mapped_column(JSONB)
+    first_seen_run_id: Mapped[int] = mapped_column(ForeignKey("match_runs.id"))
+    last_seen_run_id: Mapped[int] = mapped_column(ForeignKey("match_runs.id"))
+
+    __table_args__ = (
+        UniqueConstraint(
+            "source", "dataset", "record_key", name="uq_unmatched_records_source_dataset_key"
+        ),
+        CheckConstraint("side IN ('source_record', 'our_player')", name="side"),
+    )
+
+
+class PlayerMatchDecision(Base):
+    """An operator's decision about a link. Append-only: a change supersedes the old row.
+
+    link: this external id is this player. reject: never link this pair.
+    no_match: this external id (or this player) has no counterpart; stop queueing it.
+    The matcher only reads this table.
+    """
+
+    __tablename__ = "player_match_decisions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    source: Mapped[str] = mapped_column(String(32))
+    external_id: Mapped[str | None] = mapped_column(String(64))
+    player_id: Mapped[int | None] = mapped_column(ForeignKey("players.id", ondelete="CASCADE"))
+    decision: Mapped[str] = mapped_column(String(16))
+    reason: Mapped[str] = mapped_column(String(500))
+    decided_by: Mapped[str] = mapped_column(String(100))
+    decided_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    superseded_by: Mapped[int | None] = mapped_column(ForeignKey("player_match_decisions.id"))
+
+    __table_args__ = (
+        CheckConstraint("decision IN ('link', 'reject', 'no_match')", name="decision"),
+        CheckConstraint(
+            "(decision = 'no_match' AND (external_id IS NULL) <> (player_id IS NULL))"
+            " OR (decision <> 'no_match' AND external_id IS NOT NULL AND player_id IS NOT NULL)",
+            name="ids",
+        ),
+        CheckConstraint("length(trim(reason)) > 0", name="reason"),
+        # One active link or no_match per external id, and per player, in a source.
+        Index(
+            "uq_player_match_decisions_active_external",
+            "source",
+            "external_id",
+            unique=True,
+            postgresql_where=text("superseded_by IS NULL AND decision <> 'reject'"),
+        ),
+        Index(
+            "uq_player_match_decisions_active_player",
+            "source",
+            "player_id",
+            unique=True,
+            postgresql_where=text("superseded_by IS NULL AND decision <> 'reject'"),
+        ),
+        Index(
+            "uq_player_match_decisions_active_reject",
+            "source",
+            "external_id",
+            "player_id",
+            unique=True,
+            postgresql_where=text("superseded_by IS NULL AND decision = 'reject'"),
+        ),
     )
