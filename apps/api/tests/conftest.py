@@ -21,7 +21,8 @@ from app.main import app
 
 API_ROOT = Path(__file__).resolve().parents[1]
 TABLES = (
-    "player_season_stats, player_source_ids, club_source_ids, club_seasons, players, clubs, seasons"
+    "player_season_stats, player_source_ids, club_source_ids, club_seasons, players, clubs,"
+    " seasons, source_snapshots"
 )
 
 

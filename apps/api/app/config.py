@@ -16,6 +16,9 @@ class Settings(BaseSettings):
     database_url: str
     # Defaults to the same server as DATABASE_URL with "_test" added to the database name.
     test_database_url: str | None = None
+    # The self-hosted Transfermarkt API (felipeall/transfermarkt-api). Read only by
+    # the scheduled ingest app.ingest.transfermarkt_api, never by a router.
+    transfermarkt_api_url: str = "http://127.0.0.1:8100"
 
     @model_validator(mode="after")
     def _default_test_database(self) -> "Settings":
